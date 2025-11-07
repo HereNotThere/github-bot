@@ -4,6 +4,8 @@ import { logger } from "hono/logger";
 import commands from "./commands";
 import crypto from "node:crypto";
 import { handleGhIssue } from "./handlers/gh-issue-handler";
+import { handleGhPr } from "./handlers/gh-pr-handler";
+import { githubFetch, validateRepo } from "./api/github-client";
 
 const bot = await makeTownsBot(
   process.env.APP_PRIVATE_DATA!,
@@ -18,41 +20,6 @@ const bot = await makeTownsBot(
 // ============================================================================
 const channelToRepos = new Map<string, Set<string>>(); // channelId -> Set of "owner/repo"
 const repoToChannels = new Map<string, Set<string>>(); // "owner/repo" -> Set of channelIds
-
-// ============================================================================
-// GITHUB API HELPERS
-// ============================================================================
-const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
-const GITHUB_API = "https://api.github.com";
-
-async function githubFetch(path: string) {
-  const headers: Record<string, string> = {
-    Accept: "application/vnd.github.v3+json",
-  };
-
-  if (GITHUB_TOKEN) {
-    headers.Authorization = `token ${GITHUB_TOKEN}`;
-  }
-
-  const response = await fetch(`${GITHUB_API}${path}`, { headers });
-
-  if (!response.ok) {
-    throw new Error(
-      `GitHub API error: ${response.status} ${response.statusText}`
-    );
-  }
-
-  return response.json();
-}
-
-async function validateRepo(repo: string): Promise<boolean> {
-  try {
-    await githubFetch(`/repos/${repo}`);
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 // ============================================================================
 // GITHUB EVENT FORMATTERS
@@ -382,38 +349,7 @@ bot.onSlashCommand("github", async (handler, event) => {
   }
 });
 
-bot.onSlashCommand("gh_pr", async (handler, event) => {
-  const { channelId, args } = event;
-
-  if (args.length < 2) {
-    await handler.sendMessage(
-      channelId,
-      "❌ Usage: `/gh_pr owner/repo #123` or `/gh_pr owner/repo 123`"
-    );
-    return;
-  }
-
-  const repo = args[0];
-  const prNumber = args[1].replace("#", "");
-
-  try {
-    const pr = await githubFetch(`/repos/${repo}/pulls/${prNumber}`);
-
-    const message =
-      `**Pull Request #${pr.number}**\n` +
-      `**${repo}**\n\n` +
-      `**${pr.title}**\n\n` +
-      `📊 Status: ${pr.state === "open" ? "🟢 Open" : pr.merged ? "✅ Merged" : "❌ Closed"}\n` +
-      `👤 Author: ${pr.user.login}\n` +
-      `📝 Changes: +${pr.additions} -${pr.deletions}\n` +
-      `💬 Comments: ${pr.comments}\n` +
-      `🔗 ${pr.html_url}`;
-
-    await handler.sendMessage(channelId, message);
-  } catch (error: any) {
-    await handler.sendMessage(channelId, `❌ Error: ${error.message}`);
-  }
-});
+bot.onSlashCommand("gh_pr", handleGhPr);
 
 bot.onSlashCommand("gh_issue", handleGhIssue);
 

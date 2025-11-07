@@ -33,3 +33,17 @@ export const mockIssueWithoutLabelsResponse = {
   title: "Issue without labels",
   labels: [],
 };
+
+export const mockMergedPullRequestResponse = {
+  ...mockPullRequestResponse,
+  number: 457,
+  state: "closed" as const,
+  merged: true,
+};
+
+export const mockClosedPullRequestResponse = {
+  ...mockPullRequestResponse,
+  number: 458,
+  state: "closed" as const,
+  merged: false,
+};
