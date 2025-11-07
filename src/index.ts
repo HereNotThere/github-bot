@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { logger } from "hono/logger";
 import commands from "./commands";
 import crypto from "node:crypto";
+import { handleGhIssue } from "./handlers/gh-issue-handler";
 
 const bot = await makeTownsBot(
   process.env.APP_PRIVATE_DATA!,
@@ -414,40 +415,7 @@ bot.onSlashCommand("gh_pr", async (handler, event) => {
   }
 });
 
-bot.onSlashCommand("gh_issue", async (handler, event) => {
-  const { channelId, args } = event;
-
-  if (args.length < 2) {
-    await handler.sendMessage(
-      channelId,
-      "❌ Usage: `/gh_issue owner/repo #123` or `/gh_issue owner/repo 123`",
-    );
-    return;
-  }
-
-  const repo = args[0];
-  const issueNumber = args[1].replace("#", "");
-
-  try {
-    const issue = await githubFetch(`/repos/${repo}/issues/${issueNumber}`);
-
-    const labels = issue.labels.map((l: any) => l.name).join(", ");
-
-    const message =
-      `**Issue #${issue.number}**\n` +
-      `**${repo}**\n\n` +
-      `**${issue.title}**\n\n` +
-      `📊 Status: ${issue.state === "open" ? "🟢 Open" : "✅ Closed"}\n` +
-      `👤 Author: ${issue.user.login}\n` +
-      `💬 Comments: ${issue.comments}\n` +
-      (labels ? `🏷️ Labels: ${labels}\n` : "") +
-      `🔗 ${issue.html_url}`;
-
-    await handler.sendMessage(channelId, message);
-  } catch (error: any) {
-    await handler.sendMessage(channelId, `❌ Error: ${error.message}`);
-  }
-});
+bot.onSlashCommand("gh_issue", handleGhIssue);
 
 // ============================================================================
 // MESSAGE HANDLER - Auto-unfurl GitHub URLs (bonus feature)
