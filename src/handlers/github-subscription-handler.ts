@@ -76,15 +76,10 @@ export async function handleGithubSubscription(
 
       await handler.sendMessage(
         channelId,
-        `✅ **Subscribed to ${repo}**\n\n` +
-          `**Next Steps:**\n` +
-          `1. Go to https://github.com/${repo}/settings/hooks/new\n` +
-          `2. Payload URL: \`${process.env.PUBLIC_URL || "https://your-bot.onrender.com"}/github-webhook\`\n` +
-          `3. Content type: \`application/json\`\n` +
-          `4. Secret: (set GITHUB_WEBHOOK_SECRET in your bot)\n` +
-          `5. Events: Choose individual events or "Send me everything"\n` +
-          `6. Click "Add webhook"\n\n` +
-          `_Note: You need write access to the repository to add webhooks._`
+        `✅ **Subscription registered for ${repo}**\n\n` +
+          `⚠️ **Feature Incomplete**\n` +
+          `Automatic webhook creation requires GitHub App or OAuth integration. This feature currently only stores your subscription preference.\n\n` +
+          `💡 **Want automatic subscriptions?** Tip to fund GitHub App development! 🤑`
       );
       break;
     }
