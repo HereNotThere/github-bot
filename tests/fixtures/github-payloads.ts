@@ -13,6 +13,8 @@ export const mockPullRequestResponse = {
   title: "Test PR title",
   state: "open" as const,
   merged: false,
+  merged_at: null,
+  draft: false,
   user: { login: "testuser" },
   additions: 100,
   deletions: 50,
@@ -39,6 +41,7 @@ export const mockMergedPullRequestResponse = {
   number: 457,
   state: "closed" as const,
   merged: true,
+  merged_at: "2025-01-15T12:00:00Z",
 };
 
 export const mockClosedPullRequestResponse = {
@@ -46,6 +49,7 @@ export const mockClosedPullRequestResponse = {
   number: 458,
   state: "closed" as const,
   merged: false,
+  merged_at: null,
 };
 
 export const mockPullRequestListResponse = [
@@ -54,6 +58,8 @@ export const mockPullRequestListResponse = [
     title: "Add new feature X",
     state: "open" as const,
     merged: false,
+    merged_at: null,
+    draft: false,
     user: { login: "developer1" },
     html_url: "https://github.com/owner/repo/pull/100",
   },
@@ -62,6 +68,8 @@ export const mockPullRequestListResponse = [
     title: "Fix bug in component Y",
     state: "closed" as const,
     merged: true,
+    merged_at: "2025-01-15T12:00:00Z",
+    draft: false,
     user: { login: "developer2" },
     html_url: "https://github.com/owner/repo/pull/99",
   },
@@ -70,6 +78,8 @@ export const mockPullRequestListResponse = [
     title: "Update documentation",
     state: "closed" as const,
     merged: false,
+    merged_at: null,
+    draft: false,
     user: { login: "developer3" },
     html_url: "https://github.com/owner/repo/pull/98",
   },

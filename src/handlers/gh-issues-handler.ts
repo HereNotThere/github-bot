@@ -23,7 +23,7 @@ export async function handleGhIssues(
 
   // Strip markdown formatting from arguments
   const repo = stripMarkdown(args[0]);
-  const count = args[1] ? parseInt(args[1]) : 10;
+  const count = args[1] ? parseInt(stripMarkdown(args[1])) : 10;
 
   if (isNaN(count) || count < 1 || count > 50) {
     await handler.sendMessage(
@@ -34,21 +34,10 @@ export async function handleGhIssues(
   }
 
   try {
-    const issues = await listIssues(repo, count);
-
-    if (issues.length === 0) {
-      await handler.sendMessage(channelId, `No issues found for **${repo}**`);
-      return;
-    }
-
-    // Filter out pull requests (GitHub API includes PRs in issues endpoint)
-    const actualIssues = issues.filter(issue => !issue.pull_request);
+    const actualIssues = await listIssues(repo, count);
 
     if (actualIssues.length === 0) {
-      await handler.sendMessage(
-        channelId,
-        `No issues found for **${repo}** (only PRs available)`
-      );
+      await handler.sendMessage(channelId, `No issues found for **${repo}**`);
       return;
     }
 
@@ -58,7 +47,7 @@ export async function handleGhIssues(
         const issueLink = `[#${issue.number}](${issue.html_url})`;
         return `• ${issueLink} ${status} - **${issue.title}** by ${issue.user.login}`;
       })
-      .join("\n");
+      .join("\n\n");
 
     const message =
       `**Recent Issues - ${repo}**\n` +

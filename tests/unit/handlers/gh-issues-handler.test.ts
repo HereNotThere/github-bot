@@ -138,8 +138,12 @@ describe("gh_issues handler", () => {
   });
 
   test("should filter out pull requests from issues list", async () => {
+    // listIssues now filters out PRs internally, so mock only returns actual issues
+    const onlyActualIssues = mockIssueListWithPullRequestsResponse.filter(
+      item => !item.pull_request
+    );
     const listIssuesSpy = spyOn(githubClient, "listIssues").mockResolvedValue(
-      mockIssueListWithPullRequestsResponse
+      onlyActualIssues
     );
 
     await handleGhIssues(mockHandler, {
@@ -166,23 +170,9 @@ describe("gh_issues handler", () => {
   });
 
   test("should handle when all items are PRs (no actual issues)", async () => {
-    const onlyPRs = [
-      {
-        number: 51,
-        title: "This is actually a PR",
-        state: "open" as const,
-        user: { login: "developer1" },
-        html_url: "https://github.com/owner/repo/pull/51",
-        pull_request: {
-          url: "https://api.github.com/repos/owner/repo/pulls/51",
-        },
-        labels: [],
-        comments: 0,
-      },
-    ];
-
+    // listIssues now filters out PRs internally, so it returns empty array
     const listIssuesSpy = spyOn(githubClient, "listIssues").mockResolvedValue(
-      onlyPRs
+      []
     );
 
     await handleGhIssues(mockHandler, {
@@ -192,7 +182,7 @@ describe("gh_issues handler", () => {
 
     expect(mockHandler.sendMessage).toHaveBeenCalledWith(
       "test-channel",
-      "No issues found for **owner/repo** (only PRs available)"
+      "No issues found for **owner/repo**"
     );
 
     listIssuesSpy.mockRestore();

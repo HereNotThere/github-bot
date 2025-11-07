@@ -24,6 +24,8 @@ export interface GitHubIssue {
 
 export interface GitHubPullRequest extends GitHubIssue {
   merged: boolean;
+  merged_at: string | null;
+  draft: boolean;
   additions: number;
   deletions: number;
   [key: string]: any;

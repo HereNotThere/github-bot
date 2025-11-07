@@ -3,7 +3,7 @@ import type { GitHubIssue, GitHubPullRequest } from "./github-types";
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
 const GITHUB_API = "https://api.github.com";
 
-export async function githubFetch(path: string): Promise<any> {
+export async function githubFetch<T = unknown>(path: string): Promise<T> {
   const headers: Record<string, string> = {
     Accept: "application/vnd.github.v3+json",
   };
@@ -20,7 +20,7 @@ export async function githubFetch(path: string): Promise<any> {
     );
   }
 
-  return response.json();
+  return (await response.json()) as T;
 }
 
 export async function validateRepo(repo: string): Promise<boolean> {
@@ -36,14 +36,14 @@ export async function getIssue(
   repo: string,
   issueNumber: string
 ): Promise<GitHubIssue> {
-  return githubFetch(`/repos/${repo}/issues/${issueNumber}`);
+  return githubFetch<GitHubIssue>(`/repos/${repo}/issues/${issueNumber}`);
 }
 
 export async function getPullRequest(
   repo: string,
   prNumber: string
 ): Promise<GitHubPullRequest> {
-  return githubFetch(`/repos/${repo}/pulls/${prNumber}`);
+  return githubFetch<GitHubPullRequest>(`/repos/${repo}/pulls/${prNumber}`);
 }
 
 export async function listPullRequests(
@@ -59,7 +59,28 @@ export async function listIssues(
   repo: string,
   count: number = 10
 ): Promise<GitHubIssue[]> {
-  return githubFetch(
-    `/repos/${repo}/issues?state=all&per_page=${count}&sort=created&direction=desc`
-  );
+  const actualIssues: GitHubIssue[] = [];
+  let page = 1;
+  const perPage = 100; // Max per page
+
+  // Keep fetching pages until we have enough issues or run out of items
+  while (actualIssues.length < count && page <= 10) {
+    // Limit to 10 pages max
+    const items = await githubFetch<GitHubIssue[]>(
+      `/repos/${repo}/issues?state=all&per_page=${perPage}&page=${page}&sort=created&direction=desc`
+    );
+
+    // No more items available
+    if (items.length === 0) {
+      break;
+    }
+
+    // Filter out pull requests
+    const issues = items.filter(item => !item.pull_request);
+    actualIssues.push(...issues);
+
+    page++;
+  }
+
+  return actualIssues.slice(0, count);
 }

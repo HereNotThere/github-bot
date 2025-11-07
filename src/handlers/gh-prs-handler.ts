@@ -23,7 +23,7 @@ export async function handleGhPrs(
 
   // Strip markdown formatting from arguments
   const repo = stripMarkdown(args[0]);
-  const count = args[1] ? parseInt(args[1]) : 10;
+  const count = args[1] ? parseInt(stripMarkdown(args[1])) : 10;
 
   if (isNaN(count) || count < 1 || count > 50) {
     await handler.sendMessage(
@@ -46,16 +46,17 @@ export async function handleGhPrs(
 
     const prList = prs
       .map(pr => {
-        const status =
-          pr.state === "open"
+        const status = pr.draft
+          ? "📝 Draft"
+          : pr.state === "open"
             ? "🟢 Open"
-            : pr.merged
+            : pr.merged_at
               ? "✅ Merged"
               : "❌ Closed";
         const prLink = `[#${pr.number}](${pr.html_url})`;
         return `• ${prLink} ${status} - **${pr.title}** by ${pr.user.login}`;
       })
-      .join("\n");
+      .join("\n\n");
 
     const message =
       `**Recent Pull Requests - ${repo}**\n` +
