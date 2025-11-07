@@ -6,10 +6,6 @@ const commands = [
     description: "Get help with bot commands",
   },
   {
-    name: "time",
-    description: "Get the current time",
-  },
-  {
     name: "github",
     description: "Manage GitHub subscriptions (subscribe, unsubscribe, status)",
   },
