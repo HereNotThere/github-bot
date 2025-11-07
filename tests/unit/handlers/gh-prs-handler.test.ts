@@ -21,7 +21,7 @@ describe("gh_prs handler", () => {
     expect(mockHandler.sendMessage).toHaveBeenCalledTimes(1);
     expect(mockHandler.sendMessage).toHaveBeenCalledWith(
       "test-channel",
-      "❌ Usage: `/gh_prs owner/repo [count]`\n\nExample: `/gh_prs facebook/react 5`"
+      "❌ Usage: `/gh_prs owner/repo [count] [--state=open|closed|merged|all] [--author=username]`\n\nExample: `/gh_prs facebook/react 5 --state=open`"
     );
   });
 
@@ -36,7 +36,7 @@ describe("gh_prs handler", () => {
       args: ["owner/repo"],
     });
 
-    expect(listPRsSpy).toHaveBeenCalledWith("owner/repo", 10);
+    expect(listPRsSpy).toHaveBeenCalledWith("owner/repo", 10, {});
 
     listPRsSpy.mockRestore();
   });
@@ -52,7 +52,7 @@ describe("gh_prs handler", () => {
       args: ["owner/repo", "5"],
     });
 
-    expect(listPRsSpy).toHaveBeenCalledWith("owner/repo", 5);
+    expect(listPRsSpy).toHaveBeenCalledWith("owner/repo", 5, {});
 
     listPRsSpy.mockRestore();
   });
@@ -104,7 +104,7 @@ describe("gh_prs handler", () => {
       args: ["owner/repo"],
     });
 
-    expect(listPRsSpy).toHaveBeenCalledWith("owner/repo", 10);
+    expect(listPRsSpy).toHaveBeenCalledWith("owner/repo", 10, {});
     expect(mockHandler.sendMessage).toHaveBeenCalledTimes(1);
 
     const sentMessage = mockHandler.sendMessage.mock.calls[0][1];
@@ -188,7 +188,7 @@ describe("gh_prs handler", () => {
       args: ["**owner/repo**", "5"],
     });
 
-    expect(listPRsSpy).toHaveBeenCalledWith("owner/repo", 5);
+    expect(listPRsSpy).toHaveBeenCalledWith("owner/repo", 5, {});
 
     listPRsSpy.mockRestore();
   });
@@ -204,7 +204,7 @@ describe("gh_prs handler", () => {
       args: ["`owner/repo`", "`5`"],
     });
 
-    expect(listPRsSpy).toHaveBeenCalledWith("owner/repo", 5);
+    expect(listPRsSpy).toHaveBeenCalledWith("owner/repo", 5, {});
 
     listPRsSpy.mockRestore();
   });
@@ -220,7 +220,7 @@ describe("gh_prs handler", () => {
       args: ["**my__repo__name**"],
     });
 
-    expect(listPRsSpy).toHaveBeenCalledWith("my__repo__name", 10);
+    expect(listPRsSpy).toHaveBeenCalledWith("my__repo__name", 10, {});
 
     listPRsSpy.mockRestore();
   });
