@@ -25,7 +25,7 @@ export async function handleGithubSubscription(
       channelId,
       "**Usage:**\n" +
         "• `/github subscribe owner/repo`\n" +
-        "• `/github unsubscribe`\n" +
+        "• `/github unsubscribe owner/repo`\n" +
         "• `/github status`"
     );
     return;
@@ -85,8 +85,29 @@ export async function handleGithubSubscription(
     }
 
     case "unsubscribe": {
-      const repos = storage.channelToRepos.get(channelId);
-      if (!repos || repos.size === 0) {
+      if (!repoArg) {
+        await handler.sendMessage(
+          channelId,
+          "❌ Usage: `/github unsubscribe owner/repo`"
+        );
+        return;
+      }
+
+      // Strip markdown formatting from repo name
+      const repo = stripMarkdown(repoArg);
+
+      // Validate repo format
+      if (!repo.includes("/") || repo.split("/").length !== 2) {
+        await handler.sendMessage(
+          channelId,
+          "❌ Invalid format. Use: `owner/repo` (e.g., `facebook/react`)"
+        );
+        return;
+      }
+
+      // Check if channel has any subscriptions
+      const channelRepos = storage.channelToRepos.get(channelId);
+      if (!channelRepos || channelRepos.size === 0) {
         await handler.sendMessage(
           channelId,
           "❌ This channel has no subscriptions"
@@ -94,24 +115,31 @@ export async function handleGithubSubscription(
         return;
       }
 
-      // Remove from reverse mapping
-      for (const repoName of repos) {
-        const channels = storage.repoToChannels.get(repoName);
-        if (channels) {
-          channels.delete(channelId);
-          if (channels.size === 0) {
-            storage.repoToChannels.delete(repoName);
-          }
+      // Check if subscribed to this specific repo
+      if (!channelRepos.has(repo)) {
+        await handler.sendMessage(
+          channelId,
+          `❌ Not subscribed to **${repo}**\n\nUse \`/github status\` to see your subscriptions`
+        );
+        return;
+      }
+
+      // Remove from channelToRepos
+      channelRepos.delete(repo);
+      if (channelRepos.size === 0) {
+        storage.channelToRepos.delete(channelId);
+      }
+
+      // Remove from repoToChannels
+      const repoChannels = storage.repoToChannels.get(repo);
+      if (repoChannels) {
+        repoChannels.delete(channelId);
+        if (repoChannels.size === 0) {
+          storage.repoToChannels.delete(repo);
         }
       }
 
-      // Remove channel subscriptions
-      storage.channelToRepos.delete(channelId);
-
-      await handler.sendMessage(
-        channelId,
-        "✅ Unsubscribed from all repositories"
-      );
+      await handler.sendMessage(channelId, `✅ **Unsubscribed from ${repo}**`);
       break;
     }
 

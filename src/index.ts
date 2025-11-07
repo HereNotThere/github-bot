@@ -43,7 +43,7 @@ bot.onSlashCommand("help", async (handler, { channelId }) => {
     "**GitHub Bot for Towns**\n\n" +
       "**Subscription Commands:**\n" +
       "• `/github subscribe owner/repo` - Subscribe to GitHub events\n" +
-      "• `/github unsubscribe` - Unsubscribe from all repos\n" +
+      "• `/github unsubscribe owner/repo` - Unsubscribe from a repository\n" +
       "• `/github status` - Show current subscriptions\n\n" +
       "**Query Commands:**\n" +
       "• `/gh_pr owner/repo #123 [--full]` - Show pull request details\n" +
