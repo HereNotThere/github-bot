@@ -16,9 +16,9 @@
   },
   "dependencies": {
     "@connectrpc/connect-node": "^2.1.0",
-    "@towns-protocol/bot": "^0.0.393",
-    "@towns-protocol/proto": "^0.0.393",
-    "@towns-protocol/web3": "^0.0.393",
+    "@towns-protocol/bot": "^0.0.404",
+    "@towns-protocol/proto": "^0.0.404",
+    "@towns-protocol/web3": "^0.0.404",
     "hono": "^4.7.11",
     "viem": "^2.29.3"
   },
