@@ -1,6 +1,6 @@
 import type { BotHandler } from "@towns-protocol/bot";
 import { listPullRequests } from "../api/github-client";
-import { stripMarkdown } from "../utils/stripper";
+import { parseCommandArgs, validatePrFilters } from "../utils/arg-parser";
 
 interface GhPrsEvent {
   channelId: string;
@@ -16,14 +16,20 @@ export async function handleGhPrs(
   if (args.length < 1) {
     await handler.sendMessage(
       channelId,
-      "❌ Usage: `/gh_prs owner/repo [count]`\n\nExample: `/gh_prs facebook/react 5`"
+      "❌ Usage: `/gh_prs owner/repo [count] [--state=open|closed|merged|all] [--author=username]`\n\nExample: `/gh_prs facebook/react 5 --state=open`"
     );
     return;
   }
 
-  // Strip markdown formatting from arguments
-  const repo = stripMarkdown(args[0]);
-  const count = args[1] ? parseInt(stripMarkdown(args[1])) : 10;
+  // Parse arguments with filters
+  const { repo, count, filters } = parseCommandArgs(args);
+
+  // Validate filters
+  const validationError = validatePrFilters(filters);
+  if (validationError) {
+    await handler.sendMessage(channelId, `❌ ${validationError}`);
+    return;
+  }
 
   if (isNaN(count) || count < 1 || count > 50) {
     await handler.sendMessage(
@@ -34,7 +40,7 @@ export async function handleGhPrs(
   }
 
   try {
-    const prs = await listPullRequests(repo, count);
+    const prs = await listPullRequests(repo, count, filters);
 
     if (prs.length === 0) {
       await handler.sendMessage(

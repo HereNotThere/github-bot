@@ -24,7 +24,7 @@ describe("gh_issues handler", () => {
     expect(mockHandler.sendMessage).toHaveBeenCalledTimes(1);
     expect(mockHandler.sendMessage).toHaveBeenCalledWith(
       "test-channel",
-      "❌ Usage: `/gh_issues owner/repo [count]`\n\nExample: `/gh_issues facebook/react 5`"
+      "❌ Usage: `/gh_issues owner/repo [count] [--state=open|closed|all] [--creator=username]`\n\nExample: `/gh_issues facebook/react 5 --state=open`"
     );
   });
 
@@ -38,7 +38,7 @@ describe("gh_issues handler", () => {
       args: ["owner/repo"],
     });
 
-    expect(listIssuesSpy).toHaveBeenCalledWith("owner/repo", 10);
+    expect(listIssuesSpy).toHaveBeenCalledWith("owner/repo", 10, {});
 
     listIssuesSpy.mockRestore();
   });
@@ -53,7 +53,7 @@ describe("gh_issues handler", () => {
       args: ["owner/repo", "5"],
     });
 
-    expect(listIssuesSpy).toHaveBeenCalledWith("owner/repo", 5);
+    expect(listIssuesSpy).toHaveBeenCalledWith("owner/repo", 5, {});
 
     listIssuesSpy.mockRestore();
   });
@@ -104,7 +104,7 @@ describe("gh_issues handler", () => {
       args: ["owner/repo"],
     });
 
-    expect(listIssuesSpy).toHaveBeenCalledWith("owner/repo", 10);
+    expect(listIssuesSpy).toHaveBeenCalledWith("owner/repo", 10, {});
     expect(mockHandler.sendMessage).toHaveBeenCalledTimes(1);
 
     const sentMessage = mockHandler.sendMessage.mock.calls[0][1];
@@ -235,7 +235,7 @@ describe("gh_issues handler", () => {
       args: ["**owner/repo**", "5"],
     });
 
-    expect(listIssuesSpy).toHaveBeenCalledWith("owner/repo", 5);
+    expect(listIssuesSpy).toHaveBeenCalledWith("owner/repo", 5, {});
 
     listIssuesSpy.mockRestore();
   });
@@ -250,7 +250,7 @@ describe("gh_issues handler", () => {
       args: ["`owner/repo`", "`5`"],
     });
 
-    expect(listIssuesSpy).toHaveBeenCalledWith("owner/repo", 5);
+    expect(listIssuesSpy).toHaveBeenCalledWith("owner/repo", 5, {});
 
     listIssuesSpy.mockRestore();
   });
@@ -265,7 +265,7 @@ describe("gh_issues handler", () => {
       args: ["**my__repo__name**"],
     });
 
-    expect(listIssuesSpy).toHaveBeenCalledWith("my__repo__name", 10);
+    expect(listIssuesSpy).toHaveBeenCalledWith("my__repo__name", 10, {});
 
     listIssuesSpy.mockRestore();
   });

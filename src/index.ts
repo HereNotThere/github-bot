@@ -48,9 +48,9 @@ bot.onSlashCommand("help", async (handler, { channelId }) => {
       "**Query Commands:**\n" +
       "• `/gh_pr owner/repo #123 [--full]` - Show pull request details\n" +
       "• `/gh_issue owner/repo #123 [--full]` - Show issue details\n" +
-      "• `/gh_prs owner/repo [count]` - List recent pull requests (default: 10, max: 50)\n" +
-      "• `/gh_issues owner/repo [count]` - List recent issues (default: 10, max: 50)\n" +
-      "• Add `--full` flag to show complete description\n\n" +
+      "• `/gh_prs owner/repo [count] [--state=...] [--author=...]` - List PRs\n" +
+      "• `/gh_issues owner/repo [count] [--state=...] [--creator=...]` - List issues\n" +
+      "• Filters: --state=open|closed|merged|all, --author/--creator=username\n\n" +
       "**Other Commands:**\n" +
       "• `/help` - Show this help message"
   );

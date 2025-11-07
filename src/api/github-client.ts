@@ -48,26 +48,68 @@ export async function getPullRequest(
 
 export async function listPullRequests(
   repo: string,
-  count: number = 10
+  count: number = 10,
+  filters?: { state?: string; author?: string }
 ): Promise<GitHubPullRequest[]> {
-  return githubFetch(
-    `/repos/${repo}/pulls?state=all&per_page=${count}&sort=created&direction=desc`
-  );
+  const results: GitHubPullRequest[] = [];
+  let page = 1;
+  const perPage = 100;
+  const maxPages = 10;
+
+  // Build API query
+  let apiState = "all";
+  if (filters?.state === "open" || filters?.state === "closed") {
+    apiState = filters.state;
+  }
+
+  // Loop until we have enough results or run out of pages
+  while (results.length < count && page <= maxPages) {
+    const prs = await githubFetch<GitHubPullRequest[]>(
+      `/repos/${repo}/pulls?state=${apiState}&per_page=${perPage}&page=${page}&sort=created&direction=desc`
+    );
+
+    if (prs.length === 0) break;
+
+    // Apply client-side filters
+    let filtered = prs;
+
+    // Filter by merged state (API doesn't distinguish merged from closed)
+    if (filters?.state === "merged") {
+      filtered = filtered.filter(pr => pr.merged_at !== null);
+    }
+
+    // Filter by author (API doesn't support this natively)
+    if (filters?.author) {
+      filtered = filtered.filter(
+        pr => pr.user.login.toLowerCase() === filters.author!.toLowerCase()
+      );
+    }
+
+    results.push(...filtered);
+    page++;
+  }
+
+  return results.slice(0, count);
 }
 
 export async function listIssues(
   repo: string,
-  count: number = 10
+  count: number = 10,
+  filters?: { state?: string; creator?: string }
 ): Promise<GitHubIssue[]> {
   const actualIssues: GitHubIssue[] = [];
   let page = 1;
   const perPage = 100; // Max per page
 
+  // Build API query with filters
+  const apiState = filters?.state || "all";
+  const creatorParam = filters?.creator ? `&creator=${filters.creator}` : "";
+
   // Keep fetching pages until we have enough issues or run out of items
   while (actualIssues.length < count && page <= 10) {
     // Limit to 10 pages max
     const items = await githubFetch<GitHubIssue[]>(
-      `/repos/${repo}/issues?state=all&per_page=${perPage}&page=${page}&sort=created&direction=desc`
+      `/repos/${repo}/issues?state=${apiState}${creatorParam}&per_page=${perPage}&page=${page}&sort=created&direction=desc`
     );
 
     // No more items available

@@ -1,6 +1,6 @@
 import type { BotHandler } from "@towns-protocol/bot";
 import { listIssues } from "../api/github-client";
-import { stripMarkdown } from "../utils/stripper";
+import { parseCommandArgs, validateIssueFilters } from "../utils/arg-parser";
 
 interface GhIssuesEvent {
   channelId: string;
@@ -16,14 +16,20 @@ export async function handleGhIssues(
   if (args.length < 1) {
     await handler.sendMessage(
       channelId,
-      "❌ Usage: `/gh_issues owner/repo [count]`\n\nExample: `/gh_issues facebook/react 5`"
+      "❌ Usage: `/gh_issues owner/repo [count] [--state=open|closed|all] [--creator=username]`\n\nExample: `/gh_issues facebook/react 5 --state=open`"
     );
     return;
   }
 
-  // Strip markdown formatting from arguments
-  const repo = stripMarkdown(args[0]);
-  const count = args[1] ? parseInt(stripMarkdown(args[1])) : 10;
+  // Parse arguments with filters
+  const { repo, count, filters } = parseCommandArgs(args);
+
+  // Validate filters
+  const validationError = validateIssueFilters(filters);
+  if (validationError) {
+    await handler.sendMessage(channelId, `❌ ${validationError}`);
+    return;
+  }
 
   if (isNaN(count) || count < 1 || count > 50) {
     await handler.sendMessage(
@@ -34,7 +40,7 @@ export async function handleGhIssues(
   }
 
   try {
-    const actualIssues = await listIssues(repo, count);
+    const actualIssues = await listIssues(repo, count, filters);
 
     if (actualIssues.length === 0) {
       await handler.sendMessage(channelId, `No issues found for **${repo}**`);
