@@ -37,7 +37,7 @@ describe("github subscription handler", () => {
         "test-channel",
         "**Usage:**\n" +
           "• `/github subscribe owner/repo`\n" +
-          "• `/github unsubscribe`\n" +
+          "• `/github unsubscribe owner/repo`\n" +
           "• `/github status`"
       );
     });
@@ -79,7 +79,9 @@ describe("github subscription handler", () => {
       expect(validateRepoSpy).toHaveBeenCalledWith("owner/repo");
       expect(mockHandler.sendMessage).toHaveBeenCalledTimes(1);
       const message = mockHandler.sendMessage.mock.calls[0][1];
-      expect(message).toContain("✅ **Subscribed to owner/repo**");
+      expect(message).toContain(
+        "✅ **Subscription registered for owner/repo**"
+      );
 
       validateRepoSpy.mockRestore();
     });
@@ -93,14 +95,14 @@ describe("github subscription handler", () => {
         mockHandler,
         {
           channelId: "test-channel",
-          args: ["UNSUBSCRIBE"],
+          args: ["UNSUBSCRIBE", "owner/repo"],
         },
         storage
       );
 
       expect(mockHandler.sendMessage).toHaveBeenCalledWith(
         "test-channel",
-        "✅ Unsubscribed from all repositories"
+        "✅ **Unsubscribed from owner/repo**"
       );
     });
 
@@ -218,7 +220,9 @@ describe("github subscription handler", () => {
       expect(mockHandler.sendMessage).toHaveBeenCalledTimes(1);
 
       const message = mockHandler.sendMessage.mock.calls[0][1];
-      expect(message).toContain("✅ **Subscribed to facebook/react**");
+      expect(message).toContain(
+        "✅ **Subscription registered for facebook/react**"
+      );
 
       validateRepoSpy.mockRestore();
     });
@@ -342,7 +346,7 @@ describe("github subscription handler", () => {
       validateRepoSpy.mockRestore();
     });
 
-    test("should include webhook setup instructions in response", async () => {
+    test("should include feature incomplete notice in response", async () => {
       const validateRepoSpy = spyOn(
         githubClient,
         "validateRepo"
@@ -358,16 +362,13 @@ describe("github subscription handler", () => {
       );
 
       const message = mockHandler.sendMessage.mock.calls[0][1];
-      expect(message).toContain("**Next Steps:**");
       expect(message).toContain(
-        "https://github.com/owner/repo/settings/hooks/new"
+        "✅ **Subscription registered for owner/repo**"
       );
-      expect(message).toContain("Payload URL:");
-      expect(message).toContain("/github-webhook");
-      expect(message).toContain("Content type:");
-      expect(message).toContain("application/json");
-      expect(message).toContain("Secret:");
-      expect(message).toContain("GITHUB_WEBHOOK_SECRET");
+      expect(message).toContain("⚠️ **Feature Incomplete**");
+      expect(message).toContain(
+        "Automatic webhook creation requires GitHub App or OAuth integration"
+      );
 
       validateRepoSpy.mockRestore();
     });
@@ -408,12 +409,60 @@ describe("github subscription handler", () => {
   });
 
   describe("unsubscribe action", () => {
-    test("should send error when channel has no subscriptions", async () => {
+    test("should send error for missing repo argument", async () => {
       await handleGithubSubscription(
         mockHandler,
         {
           channelId: "test-channel",
           args: ["unsubscribe"],
+        },
+        storage
+      );
+
+      expect(mockHandler.sendMessage).toHaveBeenCalledWith(
+        "test-channel",
+        "❌ Usage: `/github unsubscribe owner/repo`"
+      );
+    });
+
+    test("should send error for invalid repo format (no slash)", async () => {
+      await handleGithubSubscription(
+        mockHandler,
+        {
+          channelId: "test-channel",
+          args: ["unsubscribe", "invalidrepo"],
+        },
+        storage
+      );
+
+      expect(mockHandler.sendMessage).toHaveBeenCalledWith(
+        "test-channel",
+        "❌ Invalid format. Use: `owner/repo` (e.g., `facebook/react`)"
+      );
+    });
+
+    test("should send error for invalid repo format (multiple slashes)", async () => {
+      await handleGithubSubscription(
+        mockHandler,
+        {
+          channelId: "test-channel",
+          args: ["unsubscribe", "owner/repo/extra"],
+        },
+        storage
+      );
+
+      expect(mockHandler.sendMessage).toHaveBeenCalledWith(
+        "test-channel",
+        "❌ Invalid format. Use: `owner/repo` (e.g., `facebook/react`)"
+      );
+    });
+
+    test("should send error when channel has no subscriptions", async () => {
+      await handleGithubSubscription(
+        mockHandler,
+        {
+          channelId: "test-channel",
+          args: ["unsubscribe", "owner/repo"],
         },
         storage
       );
@@ -424,7 +473,28 @@ describe("github subscription handler", () => {
       );
     });
 
-    test("should successfully unsubscribe from all repos", async () => {
+    test("should send error when not subscribed to specified repo", async () => {
+      // Set up subscription to a different repo
+      storage.channelToRepos.set("test-channel", new Set(["owner/other"]));
+      storage.repoToChannels.set("owner/other", new Set(["test-channel"]));
+
+      await handleGithubSubscription(
+        mockHandler,
+        {
+          channelId: "test-channel",
+          args: ["unsubscribe", "owner/repo"],
+        },
+        storage
+      );
+
+      const message = mockHandler.sendMessage.mock.calls[0][1];
+      expect(message).toContain("❌ Not subscribed to **owner/repo**");
+      expect(message).toContain(
+        "Use `/github status` to see your subscriptions"
+      );
+    });
+
+    test("should successfully unsubscribe from specific repo", async () => {
       // Set up subscriptions
       storage.channelToRepos.set("test-channel", new Set(["owner/repo"]));
       storage.repoToChannels.set("owner/repo", new Set(["test-channel"]));
@@ -433,17 +503,17 @@ describe("github subscription handler", () => {
         mockHandler,
         {
           channelId: "test-channel",
-          args: ["unsubscribe"],
+          args: ["unsubscribe", "owner/repo"],
         },
         storage
       );
 
       expect(mockHandler.sendMessage).toHaveBeenCalledWith(
         "test-channel",
-        "✅ Unsubscribed from all repositories"
+        "✅ **Unsubscribed from owner/repo**"
       );
 
-      // Channel should be removed
+      // Channel should be removed when it has no more subscriptions
       expect(storage.channelToRepos.has("test-channel")).toBe(false);
     });
 
@@ -460,7 +530,7 @@ describe("github subscription handler", () => {
         mockHandler,
         {
           channelId: "test-channel",
-          args: ["unsubscribe"],
+          args: ["unsubscribe", "owner/repo"],
         },
         storage
       );
@@ -480,7 +550,7 @@ describe("github subscription handler", () => {
         mockHandler,
         {
           channelId: "test-channel",
-          args: ["unsubscribe"],
+          args: ["unsubscribe", "owner/repo"],
         },
         storage
       );
@@ -503,7 +573,7 @@ describe("github subscription handler", () => {
         mockHandler,
         {
           channelId: "channel-1",
-          args: ["unsubscribe"],
+          args: ["unsubscribe", "owner/repo"],
         },
         storage
       );
@@ -521,8 +591,8 @@ describe("github subscription handler", () => {
       expect(channels?.size).toBe(1);
     });
 
-    test("should handle unsubscribing from multiple repos", async () => {
-      // Set up multiple subscriptions
+    test("should preserve other repos when unsubscribing from one", async () => {
+      // Set up multiple subscriptions for same channel
       storage.channelToRepos.set(
         "test-channel",
         new Set(["owner/repo1", "owner/repo2"])
@@ -534,15 +604,44 @@ describe("github subscription handler", () => {
         mockHandler,
         {
           channelId: "test-channel",
-          args: ["unsubscribe"],
+          args: ["unsubscribe", "owner/repo1"],
         },
         storage
       );
 
-      // All repos should be cleaned up
-      expect(storage.channelToRepos.has("test-channel")).toBe(false);
+      // repo1 should be removed but repo2 should remain
       expect(storage.repoToChannels.has("owner/repo1")).toBe(false);
-      expect(storage.repoToChannels.has("owner/repo2")).toBe(false);
+      expect(storage.repoToChannels.has("owner/repo2")).toBe(true);
+
+      // Channel should still exist with repo2
+      const channelRepos = storage.channelToRepos.get("test-channel");
+      expect(channelRepos?.has("owner/repo1")).toBe(false);
+      expect(channelRepos?.has("owner/repo2")).toBe(true);
+      expect(channelRepos?.size).toBe(1);
+    });
+
+    test("should strip markdown from repo name", async () => {
+      // Set up subscription
+      storage.channelToRepos.set("test-channel", new Set(["owner/repo"]));
+      storage.repoToChannels.set("owner/repo", new Set(["test-channel"]));
+
+      await handleGithubSubscription(
+        mockHandler,
+        {
+          channelId: "test-channel",
+          args: ["unsubscribe", "**owner/repo**"],
+        },
+        storage
+      );
+
+      expect(mockHandler.sendMessage).toHaveBeenCalledWith(
+        "test-channel",
+        "✅ **Unsubscribed from owner/repo**"
+      );
+
+      // Should have removed the subscription
+      expect(storage.channelToRepos.has("test-channel")).toBe(false);
+      expect(storage.repoToChannels.has("owner/repo")).toBe(false);
     });
   });
 
