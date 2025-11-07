@@ -6,7 +6,6 @@ import crypto from "node:crypto";
 import { handleGhIssue } from "./handlers/gh-issue-handler";
 import { handleGhPr } from "./handlers/gh-pr-handler";
 import { handleGithubSubscription } from "./handlers/github-subscription-handler";
-import { githubFetch } from "./api/github-client";
 import {
   formatPullRequest,
   formatIssue,
@@ -28,12 +27,14 @@ const bot = await makeTownsBot(
 // ============================================================================
 // STORAGE - In-memory maps (use SQLite for production)
 // ============================================================================
+
 const channelToRepos = new Map<string, Set<string>>(); // channelId -> Set of "owner/repo"
 const repoToChannels = new Map<string, Set<string>>(); // "owner/repo" -> Set of channelIds
 
 // ============================================================================
 // SLASH COMMAND HANDLERS
 // ============================================================================
+
 bot.onSlashCommand("help", async (handler, { channelId }) => {
   await handler.sendMessage(
     channelId,
@@ -47,14 +48,8 @@ bot.onSlashCommand("help", async (handler, { channelId }) => {
       "• `/gh_issue owner/repo #123 [--full]` - Show issue details\n" +
       "• Add `--full` flag to show complete description\n\n" +
       "**Other Commands:**\n" +
-      "• `/help` - Show this help message\n" +
-      "• `/time` - Get the current time"
+      "• `/help` - Show this help message"
   );
-});
-
-bot.onSlashCommand("time", async (handler, { channelId }) => {
-  const currentTime = new Date().toLocaleString();
-  await handler.sendMessage(channelId, `Current time: ${currentTime} ⏰`);
 });
 
 bot.onSlashCommand("github", async (handler, event) => {
@@ -69,41 +64,9 @@ bot.onSlashCommand("gh_pr", handleGhPr);
 bot.onSlashCommand("gh_issue", handleGhIssue);
 
 // ============================================================================
-// MESSAGE HANDLER - Auto-unfurl GitHub URLs (bonus feature)
-// ============================================================================
-bot.onMessage(async (handler, { message, channelId }) => {
-  // Detect GitHub URLs
-  const githubUrlRegex =
-    /https:\/\/github\.com\/([^\/]+)\/([^\/\s]+)\/(pull|issues)\/(\d+)/g;
-  const matches = [...message.matchAll(githubUrlRegex)];
-
-  if (matches.length > 0) {
-    for (const match of matches.slice(0, 2)) {
-      // Limit to 2 unfurls per message
-      const [, owner, repo, type, number] = match;
-
-      try {
-        const endpoint = type === "pull" ? "pulls" : "issues";
-        const data = await githubFetch(
-          `/repos/${owner}/${repo}/${endpoint}/${number}`
-        );
-
-        const unfurled =
-          `**${type === "pull" ? "PR" : "Issue"} #${data.number}** in ${owner}/${repo}\n` +
-          `**${data.title}**\n` +
-          `👤 ${data.user.login} | ${data.state === "open" ? "🟢 Open" : "✅ Closed"}`;
-
-        await handler.sendMessage(channelId, unfurled);
-      } catch {
-        // Silently ignore unfurl errors
-      }
-    }
-  }
-});
-
-// ============================================================================
 // START BOT & SETUP HONO APP
 // ============================================================================
+
 const { jwtMiddleware, handler } = bot.start();
 
 const app = new Hono();
