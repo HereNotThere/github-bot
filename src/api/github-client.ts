@@ -10,10 +10,10 @@ export type GitHubIssue =
   Endpoints["GET /repos/{owner}/{repo}/issues/{issue_number}"]["response"]["data"];
 export type GitHubPullRequest =
   Endpoints["GET /repos/{owner}/{repo}/pulls/{pull_number}"]["response"]["data"];
-export type GitHubIssueFromList =
-  Endpoints["GET /repos/{owner}/{repo}/issues"]["response"]["data"][0];
-export type GitHubPullRequestFromList =
-  Endpoints["GET /repos/{owner}/{repo}/pulls"]["response"]["data"][0];
+export type GitHubIssueList =
+  Endpoints["GET /repos/{owner}/{repo}/issues"]["response"]["data"];
+export type GitHubPullRequestList =
+  Endpoints["GET /repos/{owner}/{repo}/pulls"]["response"]["data"];
 
 function parseRepo(repo: string): { owner: string; repo: string } {
   const [owner, repoName] = repo.split("/");
@@ -60,7 +60,7 @@ export async function listPullRequests(
   repo: string,
   count: number = 10,
   filters?: { state?: string; author?: string }
-): Promise<GitHubPullRequestFromList[]> {
+): Promise<GitHubPullRequestList> {
   const { owner, repo: repoName } = parseRepo(repo);
 
   // Determine API state (merged PRs are fetched as closed)
@@ -71,7 +71,7 @@ export async function listPullRequests(
     apiState = "closed";
   }
 
-  const results: GitHubPullRequestFromList[] = [];
+  const results: GitHubPullRequestList = [];
   let pageCount = 0;
   const maxPages = 10; // Limit pagination to avoid timeouts
 
@@ -121,7 +121,7 @@ export async function listIssues(
   repo: string,
   count: number = 10,
   filters?: { state?: string; creator?: string }
-): Promise<GitHubIssueFromList[]> {
+): Promise<GitHubIssueList> {
   const { owner, repo: repoName } = parseRepo(repo);
 
   // Build API query parameters
@@ -139,7 +139,7 @@ export async function listIssues(
     params.creator = filters.creator;
   }
 
-  const actualIssues: GitHubIssueFromList[] = [];
+  const actualIssues: GitHubIssueList = [];
   let pageCount = 0;
   const maxPages = 10; // Limit pagination to avoid timeouts
 
