@@ -117,6 +117,26 @@ function formatEvent(event: GitHubEvent): string {
       return "";
     }
 
+    case "WorkflowRunEvent": {
+      const workflowRun = payload.workflow_run as any;
+      const action = payload.action as string;
+
+      if (action === "completed") {
+        const emoji = workflowRun.conclusion === "success" ? "✅" : "❌";
+        const status =
+          workflowRun.conclusion === "success" ? "Passed" : "Failed";
+
+        return (
+          `${emoji} **CI ${status}**\n` +
+          `**${repo.name}**\n` +
+          `🔧 ${workflowRun.name}\n` +
+          `🌿 ${workflowRun.head_branch}\n` +
+          `🔗 ${workflowRun.html_url}`
+        );
+      }
+      return "";
+    }
+
     case "IssueCommentEvent": {
       const issue = payload.issue as any;
       const comment = payload.comment as any;

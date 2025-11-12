@@ -12,7 +12,8 @@ sqlite.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     channel_id TEXT NOT NULL,
     repo TEXT NOT NULL,
-    created_at INTEGER NOT NULL
+    created_at INTEGER NOT NULL,
+    UNIQUE(channel_id, repo)
   );
 
   CREATE TABLE IF NOT EXISTS repo_polling_state (
@@ -33,29 +34,26 @@ sqlite.exec(`
 export class DatabaseService {
   /**
    * Subscribe a channel to a repository
+   * Handles concurrent requests gracefully with UNIQUE constraint
    */
   async subscribe(channelId: string, repo: string): Promise<void> {
-    // Check if already subscribed
-    const existing = await db
-      .select()
-      .from(subscriptions)
-      .where(
-        and(
-          eq(subscriptions.channelId, channelId),
-          eq(subscriptions.repo, repo)
-        )
-      )
-      .limit(1);
-
-    if (existing.length > 0) {
-      return; // Already subscribed
+    try {
+      await db.insert(subscriptions).values({
+        channelId,
+        repo,
+        createdAt: new Date(),
+      });
+    } catch (error) {
+      // Ignore UNIQUE constraint violations (already subscribed)
+      // SQLite error code for UNIQUE constraint: SQLITE_CONSTRAINT
+      if (
+        error instanceof Error &&
+        error.message.includes("UNIQUE constraint failed")
+      ) {
+        return; // Already subscribed, no-op
+      }
+      throw error; // Re-throw other errors
     }
-
-    await db.insert(subscriptions).values({
-      channelId,
-      repo,
-      createdAt: new Date(),
-    });
   }
 
   /**

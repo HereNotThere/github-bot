@@ -1,14 +1,20 @@
-import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, unique } from "drizzle-orm/sqlite-core";
 
 /**
  * Stores channel subscriptions to GitHub repositories
  */
-export const subscriptions = sqliteTable("subscriptions", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  channelId: text("channel_id").notNull(),
-  repo: text("repo").notNull(), // Format: "owner/repo"
-  createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
-});
+export const subscriptions = sqliteTable(
+  "subscriptions",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    channelId: text("channel_id").notNull(),
+    repo: text("repo").notNull(), // Format: "owner/repo"
+    createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+  },
+  table => ({
+    uniqueChannelRepo: unique().on(table.channelId, table.repo),
+  })
+);
 
 /**
  * Stores polling state for each subscribed repository
