@@ -1,6 +1,7 @@
-import type { GitHubEvent } from "../api/github-client";
+import type { GitHubEvent as GitHubEventRaw } from "../api/github-client";
 import { fetchRepoEvents } from "../api/github-client";
 import { dbService } from "../db";
+import type { GitHubEvent } from "../types/github-events-api";
 
 /**
  * Format GitHub Events API events into human-readable messages
@@ -11,8 +12,9 @@ function formatEvent(event: GitHubEvent): string {
 
   switch (type) {
     case "PullRequestEvent": {
-      const pr = payload.pull_request as any;
-      const action = payload.action as string;
+      const { action, pull_request: pr } = payload;
+
+      if (!pr) return "";
 
       if (action === "opened") {
         return (
@@ -47,8 +49,9 @@ function formatEvent(event: GitHubEvent): string {
     }
 
     case "IssuesEvent": {
-      const issue = payload.issue as any;
-      const action = payload.action as string;
+      const { action, issue } = payload;
+
+      if (!issue) return "";
 
       if (action === "opened") {
         return (
@@ -73,12 +76,12 @@ function formatEvent(event: GitHubEvent): string {
     }
 
     case "PushEvent": {
-      const commits = payload.commits as any[];
-      const ref = payload.ref as string;
-      const branch = ref?.replace("refs/heads/", "") || "unknown";
-      const commitCount = commits?.length || 0;
+      const { commits, ref } = payload;
 
-      if (commitCount === 0) return "";
+      if (!commits || commits.length === 0) return "";
+
+      const branch = ref?.replace("refs/heads/", "") || "unknown";
+      const commitCount = commits.length;
 
       let message =
         `📦 **Push to ${repo.name}**\n` +
@@ -102,8 +105,9 @@ function formatEvent(event: GitHubEvent): string {
     }
 
     case "ReleaseEvent": {
-      const release = payload.release as any;
-      const action = payload.action as string;
+      const { action, release } = payload;
+
+      if (!release) return "";
 
       if (action === "published") {
         return (
@@ -118,8 +122,9 @@ function formatEvent(event: GitHubEvent): string {
     }
 
     case "WorkflowRunEvent": {
-      const workflowRun = payload.workflow_run as any;
-      const action = payload.action as string;
+      const { action, workflow_run: workflowRun } = payload;
+
+      if (!workflowRun) return "";
 
       if (action === "completed") {
         const emoji = workflowRun.conclusion === "success" ? "✅" : "❌";
@@ -138,9 +143,9 @@ function formatEvent(event: GitHubEvent): string {
     }
 
     case "IssueCommentEvent": {
-      const issue = payload.issue as any;
-      const comment = payload.comment as any;
-      const action = payload.action as string;
+      const { action, issue, comment } = payload;
+
+      if (!issue || !comment) return "";
 
       if (action === "created") {
         const shortComment = comment.body.split("\n")[0].substring(0, 100);
@@ -157,9 +162,9 @@ function formatEvent(event: GitHubEvent): string {
     }
 
     case "PullRequestReviewEvent": {
-      const pr = payload.pull_request as any;
-      const review = payload.review as any;
-      const action = payload.action as string;
+      const { action, pull_request: pr, review } = payload;
+
+      if (!pr || !review) return "";
 
       if (action === "created") {
         let emoji = "👀";
@@ -334,7 +339,9 @@ export class PollingService {
       const eventsToSend = newEvents.reverse();
 
       for (const event of eventsToSend) {
-        const message = formatEvent(event);
+        // Cast raw API event to typed GitHubEvent for type-safe formatting
+        // The formatEvent function handles unknown event types by returning empty string
+        const message = formatEvent(event as unknown as GitHubEvent);
 
         if (message) {
           // Send to all subscribed channels
