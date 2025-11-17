@@ -121,7 +121,11 @@ export function formatEvent(
       const displayCommits = commits.slice(0, 3);
       for (const commit of displayCommits) {
         const shortSha = commit.sha.substring(0, 7);
-        const shortMessage = commit.message.split("\n")[0].substring(0, 60);
+        const firstLine = commit.message.split("\n")[0];
+        const shortMessage =
+          firstLine.length > 60
+            ? firstLine.substring(0, 60) + "..."
+            : firstLine;
         message += `\`${shortSha}\` ${shortMessage}\n`;
       }
 
@@ -175,7 +179,7 @@ export function formatEvent(
     case "IssueCommentEvent": {
       const { action, issue, comment } = payload;
 
-      if (!issue || !comment) return "";
+      if (!issue || !comment || !comment.user) return "";
 
       if (action === "created") {
         const shortComment = comment.body.split("\n")[0].substring(0, 100);
@@ -184,7 +188,7 @@ export function formatEvent(
           `💬 **New Comment on Issue #${issue.number}**\n` +
           `**${repo.name}**\n\n` +
           `"${shortComment}${comment.body.length > 100 ? "..." : ""}"\n` +
-          `👤 ${actor.login}\n` +
+          `👤 ${comment.user.login}\n` +
           `🔗 ${comment.html_url}`
         );
       }
@@ -197,6 +201,14 @@ export function formatEvent(
       if (!pr || !review) return "";
 
       if (action === "submitted") {
+        // Look up full PR details from map
+        const fullPr = prDetailsMap.get(pr.number);
+
+        // Construct review URL with fallback to PR URL
+        const htmlUrl =
+          review.html_url ||
+          `https://github.com/${repo.name}/pull/${pr.number}`;
+
         let emoji = "👀";
         if (review.state === "approved") emoji = "✅";
         if (review.state === "changes_requested") emoji = "🔄";
@@ -206,9 +218,9 @@ export function formatEvent(
           header: `PR Review: ${review.state.replace("_", " ")}`,
           repository: repo.name,
           number: pr.number,
-          title: pr.title,
+          title: fullPr?.title ?? pr.title,
           user: actor.login,
-          url: review.html_url,
+          url: htmlUrl,
         });
       }
       return "";

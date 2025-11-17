@@ -93,7 +93,9 @@ export function formatPush(payload: PushEvent): string {
   const displayCommits = commits.slice(0, 3);
   for (const commit of displayCommits) {
     const shortSha = commit.id.substring(0, 7);
-    const shortMessage = commit.message.split("\n")[0].substring(0, 60);
+    const firstLine = commit.message.split("\n")[0];
+    const shortMessage =
+      firstLine.length > 60 ? firstLine.substring(0, 60) + "..." : firstLine;
     message += `\`${shortSha}\` ${shortMessage}\n`;
   }
 
