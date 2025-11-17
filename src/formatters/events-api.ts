@@ -8,7 +8,7 @@
  * - PR objects are minimal, full details passed via prDetailsMap
  */
 
-import type { GitHubEvent } from "../types/github-events-api";
+import type { GitHubEvent } from "../types/events-api";
 import type { GitHubPullRequest } from "../api/github-client";
 import { buildMessage } from "./shared";
 

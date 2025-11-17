@@ -4,7 +4,7 @@ import {
   type GitHubPullRequest,
 } from "../api/github-client";
 import { dbService } from "../db";
-import type { GitHubEvent } from "../types/github-events-api";
+import { validateGitHubEvent } from "../types/events-api";
 import { formatEvent } from "../formatters/events-api";
 
 /**
@@ -234,16 +234,13 @@ export class PollingService {
       }
 
       for (const event of eventsToSend) {
-        // TODO: Add runtime validation with Zod to safely parse GitHub API events
-        // Currently using unsafe cast which bypasses type safety at runtime.
-        // GitHub API could change or return malformed data, causing silent failures.
-        // Recommended: Create Zod schemas for event payloads, validate at API boundary,
-        // and gracefully skip invalid events with proper error logging.
-        // See: https://github.com/colinhacks/zod
-        const message = formatEvent(
-          event as unknown as GitHubEvent,
-          prDetailsMap
-        );
+        // Validate event against schema
+        const validatedEvent = validateGitHubEvent(event);
+        if (!validatedEvent) {
+          continue; // Skip invalid event (error already logged)
+        }
+
+        const message = formatEvent(validatedEvent, prDetailsMap);
 
         if (message) {
           // Filter channels based on their event type preferences
