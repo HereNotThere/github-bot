@@ -190,15 +190,7 @@ app.post("/github-webhook", async c => {
     const errorMessage =
       error instanceof Error ? error.message : "Unknown error";
 
-    // Mark as failed
-    await webhookProcessor.markProcessed(
-      deliveryId,
-      undefined,
-      event,
-      "failed",
-      errorMessage
-    );
-
+    // Don't mark as processed - allow GitHub to retry failed webhooks
     if (errorMessage.includes("signature")) {
       return c.json({ error: "Invalid signature" }, 401);
     }

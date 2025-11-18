@@ -1,6 +1,6 @@
 import { db } from "../db";
 import { webhookDeliveries } from "../db/schema";
-import { eq } from "drizzle-orm";
+import { eq, lt } from "drizzle-orm";
 
 /**
  * WebhookProcessor - Handles webhook idempotency and delivery tracking
@@ -64,7 +64,7 @@ export class WebhookProcessor {
 
     const result = await db
       .delete(webhookDeliveries)
-      .where(eq(webhookDeliveries.deliveredAt, cutoffDate))
+      .where(lt(webhookDeliveries.deliveredAt, cutoffDate))
       .returning();
 
     return result.length;

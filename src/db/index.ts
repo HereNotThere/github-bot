@@ -41,8 +41,38 @@ sqlite.exec(`
     updated_at INTEGER NOT NULL
   );
 
+  CREATE TABLE IF NOT EXISTS github_installations (
+    installation_id INTEGER PRIMARY KEY,
+    account_login TEXT NOT NULL,
+    account_type TEXT NOT NULL,
+    installed_at INTEGER NOT NULL,
+    suspended_at INTEGER,
+    app_slug TEXT NOT NULL DEFAULT 'towns-github-bot'
+  );
+
+  CREATE TABLE IF NOT EXISTS installation_repositories (
+    installation_id INTEGER NOT NULL,
+    repo_full_name TEXT NOT NULL,
+    added_at INTEGER NOT NULL,
+    UNIQUE(installation_id, repo_full_name),
+    FOREIGN KEY (installation_id) REFERENCES github_installations(installation_id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS webhook_deliveries (
+    delivery_id TEXT PRIMARY KEY,
+    installation_id INTEGER,
+    event_type TEXT NOT NULL,
+    delivered_at INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    error TEXT,
+    retry_count INTEGER NOT NULL DEFAULT 0
+  );
+
   CREATE INDEX IF NOT EXISTS idx_subscriptions_channel ON subscriptions(channel_id);
   CREATE INDEX IF NOT EXISTS idx_subscriptions_repo ON subscriptions(repo);
+  CREATE INDEX IF NOT EXISTS idx_installation_repos_by_name ON installation_repositories(repo_full_name);
+  CREATE INDEX IF NOT EXISTS idx_installation_repos_by_install ON installation_repositories(installation_id);
+  CREATE INDEX IF NOT EXISTS idx_deliveries_status ON webhook_deliveries(status, delivered_at);
 `);
 
 /**

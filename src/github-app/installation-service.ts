@@ -91,10 +91,10 @@ export class InstallationService {
 
     console.log(`GitHub App uninstalled: ${accountLogin} (${installation.id})`);
 
-    // Get repos before deletion
+    // Get repos before deletion for notifications
     const repos = await this.getInstallationRepos(installation.id);
 
-    // Remove from database (CASCADE deletes repositories)
+    // Remove installation (foreign key CASCADE automatically deletes related repositories)
     await db
       .delete(githubInstallations)
       .where(eq(githubInstallations.installationId, installation.id));

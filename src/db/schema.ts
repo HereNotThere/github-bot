@@ -50,7 +50,11 @@ export const githubInstallations = sqliteTable("github_installations", {
 export const installationRepositories = sqliteTable(
   "installation_repositories",
   {
-    installationId: integer("installation_id").notNull(),
+    installationId: integer("installation_id")
+      .notNull()
+      .references(() => githubInstallations.installationId, {
+        onDelete: "cascade",
+      }),
     repoFullName: text("repo_full_name").notNull(), // Format: "owner/repo"
     addedAt: integer("added_at", { mode: "timestamp" }).notNull(),
   },
