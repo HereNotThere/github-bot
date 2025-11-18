@@ -1,4 +1,12 @@
-import { sqliteTable, text, integer, unique } from "drizzle-orm/sqlite-core";
+import {
+  sqliteTable,
+  text,
+  integer,
+  unique,
+  primaryKey,
+  check,
+} from "drizzle-orm/sqlite-core";
+import { sql } from "drizzle-orm";
 import { DEFAULT_EVENT_TYPES } from "../constants/event-types";
 
 /**
@@ -34,14 +42,23 @@ export const repoPollingState = sqliteTable("repo_polling_state", {
  * Stores GitHub App installations
  * Tracks which accounts have installed the GitHub App
  */
-export const githubInstallations = sqliteTable("github_installations", {
-  installationId: integer("installation_id").primaryKey(),
-  accountLogin: text("account_login").notNull(),
-  accountType: text("account_type").notNull(), // "Organization" or "User"
-  installedAt: integer("installed_at", { mode: "timestamp" }).notNull(),
-  suspendedAt: integer("suspended_at", { mode: "timestamp" }),
-  appSlug: text("app_slug").notNull().default("towns-github-bot"),
-});
+export const githubInstallations = sqliteTable(
+  "github_installations",
+  {
+    installationId: integer("installation_id").primaryKey(),
+    accountLogin: text("account_login").notNull(),
+    accountType: text("account_type").notNull(), // "Organization" or "User"
+    installedAt: integer("installed_at", { mode: "timestamp" }).notNull(),
+    suspendedAt: integer("suspended_at", { mode: "timestamp" }),
+    appSlug: text("app_slug").notNull().default("towns-github-bot"),
+  },
+  table => ({
+    accountTypeCheck: check(
+      "account_type_check",
+      sql`${table.accountType} IN ('Organization', 'User')`
+    ),
+  })
+);
 
 /**
  * Stores repositories for each GitHub App installation
@@ -59,7 +76,7 @@ export const installationRepositories = sqliteTable(
     addedAt: integer("added_at", { mode: "timestamp" }).notNull(),
   },
   table => ({
-    pk: unique().on(table.installationId, table.repoFullName),
+    pk: primaryKey({ columns: [table.installationId, table.repoFullName] }),
   })
 );
 
@@ -67,12 +84,21 @@ export const installationRepositories = sqliteTable(
  * Stores webhook delivery tracking for idempotency
  * Uses X-GitHub-Delivery header as primary key
  */
-export const webhookDeliveries = sqliteTable("webhook_deliveries", {
-  deliveryId: text("delivery_id").primaryKey(), // X-GitHub-Delivery header value
-  installationId: integer("installation_id"),
-  eventType: text("event_type").notNull(),
-  deliveredAt: integer("delivered_at", { mode: "timestamp" }).notNull(),
-  status: text("status").notNull().default("pending"), // "pending", "success", "failed"
-  error: text("error"),
-  retryCount: integer("retry_count").notNull().default(0),
-});
+export const webhookDeliveries = sqliteTable(
+  "webhook_deliveries",
+  {
+    deliveryId: text("delivery_id").primaryKey(), // X-GitHub-Delivery header value
+    installationId: integer("installation_id"),
+    eventType: text("event_type").notNull(),
+    deliveredAt: integer("delivered_at", { mode: "timestamp" }).notNull(),
+    status: text("status").notNull().default("pending"), // "pending", "success", "failed"
+    error: text("error"),
+    retryCount: integer("retry_count").notNull().default(0),
+  },
+  table => ({
+    statusCheck: check(
+      "status_check",
+      sql`${table.status} IN ('pending', 'success', 'failed')`
+    ),
+  })
+);

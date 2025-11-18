@@ -44,7 +44,7 @@ sqlite.exec(`
   CREATE TABLE IF NOT EXISTS github_installations (
     installation_id INTEGER PRIMARY KEY,
     account_login TEXT NOT NULL,
-    account_type TEXT NOT NULL,
+    account_type TEXT NOT NULL CHECK(account_type IN ('Organization', 'User')),
     installed_at INTEGER NOT NULL,
     suspended_at INTEGER,
     app_slug TEXT NOT NULL DEFAULT 'towns-github-bot'
@@ -54,7 +54,7 @@ sqlite.exec(`
     installation_id INTEGER NOT NULL,
     repo_full_name TEXT NOT NULL,
     added_at INTEGER NOT NULL,
-    UNIQUE(installation_id, repo_full_name),
+    PRIMARY KEY (installation_id, repo_full_name),
     FOREIGN KEY (installation_id) REFERENCES github_installations(installation_id) ON DELETE CASCADE
   );
 
@@ -63,7 +63,7 @@ sqlite.exec(`
     installation_id INTEGER,
     event_type TEXT NOT NULL,
     delivered_at INTEGER NOT NULL,
-    status TEXT NOT NULL DEFAULT 'pending',
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'success', 'failed')),
     error TEXT,
     retry_count INTEGER NOT NULL DEFAULT 0
   );
