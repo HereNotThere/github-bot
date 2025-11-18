@@ -4,17 +4,17 @@
  */
 
 import type {
-  PullRequestEvent,
-  IssuesEvent,
-  PushEvent,
-  ReleaseEvent,
-  WorkflowRunEvent,
-  IssueCommentEvent,
-  PullRequestReviewEvent,
-} from "@octokit/webhooks-types";
+  PullRequestPayload,
+  IssuesPayload,
+  PushPayload,
+  ReleasePayload,
+  WorkflowRunPayload,
+  IssueCommentPayload,
+  PullRequestReviewPayload,
+} from "../types/webhooks";
 import { buildMessage } from "./shared";
 
-export function formatPullRequest(payload: PullRequestEvent): string {
+export function formatPullRequest(payload: PullRequestPayload): string {
   const { action, pull_request, repository } = payload;
 
   let emoji: string;
@@ -49,7 +49,7 @@ export function formatPullRequest(payload: PullRequestEvent): string {
   });
 }
 
-export function formatIssue(payload: IssuesEvent): string {
+export function formatIssue(payload: IssuesPayload): string {
   const { action, issue, repository } = payload;
 
   let emoji: string;
@@ -71,12 +71,12 @@ export function formatIssue(payload: IssuesEvent): string {
     repository: repository.full_name,
     number: issue.number,
     title: issue.title,
-    user: issue.user.login,
+    user: issue.user?.login || "unknown",
     url: issue.html_url,
   });
 }
 
-export function formatPush(payload: PushEvent): string {
+export function formatPush(payload: PushPayload): string {
   const { ref, commits, pusher, repository, compare } = payload;
   const branch = ref.replace("refs/heads/", "");
   const commitCount = commits?.length || 0;
@@ -108,7 +108,7 @@ export function formatPush(payload: PushEvent): string {
   return message;
 }
 
-export function formatRelease(payload: ReleaseEvent): string {
+export function formatRelease(payload: ReleasePayload): string {
   const { action, release, repository } = payload;
 
   if (action === "published") {
@@ -117,7 +117,7 @@ export function formatRelease(payload: ReleaseEvent): string {
       header: "Release Published",
       repository: repository.full_name,
       title: release.name || release.tag_name,
-      user: release.author.login,
+      user: release.author?.login || "unknown",
       metadata: [`📦 ${release.tag_name}`],
       url: release.html_url,
     });
@@ -126,7 +126,7 @@ export function formatRelease(payload: ReleaseEvent): string {
   return "";
 }
 
-export function formatWorkflowRun(payload: WorkflowRunEvent): string {
+export function formatWorkflowRun(payload: WorkflowRunPayload): string {
   const { action, workflow_run, repository } = payload;
 
   if (action === "completed") {
@@ -145,7 +145,7 @@ export function formatWorkflowRun(payload: WorkflowRunEvent): string {
   return "";
 }
 
-export function formatIssueComment(payload: IssueCommentEvent): string {
+export function formatIssueComment(payload: IssueCommentPayload): string {
   const { action, issue, comment, repository } = payload;
 
   if (action === "created") {
@@ -155,7 +155,7 @@ export function formatIssueComment(payload: IssueCommentEvent): string {
       `💬 **New Comment on Issue #${issue.number}**\n` +
       `**${repository.full_name}**\n\n` +
       `"${shortComment}${comment.body.length > 100 ? "..." : ""}"\n` +
-      `👤 ${comment.user.login}\n` +
+      `👤 ${comment.user?.login || "unknown"}\n` +
       `🔗 ${comment.html_url}`
     );
   }
@@ -164,7 +164,7 @@ export function formatIssueComment(payload: IssueCommentEvent): string {
 }
 
 export function formatPullRequestReview(
-  payload: PullRequestReviewEvent
+  payload: PullRequestReviewPayload
 ): string {
   const { action, review, pull_request, repository } = payload;
 
@@ -177,7 +177,7 @@ export function formatPullRequestReview(
       `${emoji} **PR Review: ${review.state.replace("_", " ")}**\n` +
       `**${repository.full_name}** #${pull_request.number}\n\n` +
       `**${pull_request.title}**\n` +
-      `👤 ${review.user.login}\n` +
+      `👤 ${review.user?.login || "unknown"}\n` +
       `🔗 ${review.html_url}`
     );
   }

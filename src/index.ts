@@ -6,7 +6,12 @@ import { handleGhIssue } from "./handlers/gh-issue-handler";
 import { handleGhPr } from "./handlers/gh-pr-handler";
 import { handleGithubSubscription } from "./handlers/github-subscription-handler";
 import { pollingService } from "./services/polling-service";
-import { dbService } from "./db";
+import { db, dbService } from "./db";
+import { githubInstallations } from "./db/schema";
+import { GitHubApp } from "./github-app/app";
+import { WebhookProcessor } from "./github-app/webhook-processor";
+import { InstallationService } from "./github-app/installation-service";
+import { EventProcessor } from "./github-app/event-processor";
 
 const bot = await makeTownsBot(
   process.env.APP_PRIVATE_DATA!,
@@ -15,6 +20,74 @@ const bot = await makeTownsBot(
     commands,
   }
 );
+
+// ============================================================================
+// GITHUB APP INITIALIZATION
+// ============================================================================
+
+const githubApp = new GitHubApp();
+const webhookProcessor = new WebhookProcessor();
+const installationService = new InstallationService(bot);
+const eventProcessor = new EventProcessor(bot);
+
+// Register webhook event handlers (only if GitHub App is configured)
+if (githubApp.isEnabled()) {
+  githubApp.webhooks.on("installation", async ({ payload }) => {
+    if (payload.action === "created") {
+      await installationService.handleInstallationCreated(payload);
+    } else if (payload.action === "deleted") {
+      await installationService.handleInstallationDeleted(payload);
+    }
+  });
+
+  githubApp.webhooks.on("installation_repositories", async ({ payload }) => {
+    if (payload.action === "added") {
+      await installationService.handleRepositoriesAdded(payload);
+    } else if (payload.action === "removed") {
+      await installationService.handleRepositoriesRemoved(payload);
+    }
+  });
+
+  githubApp.webhooks.on("pull_request", async ({ payload }) => {
+    await eventProcessor.processPullRequest(payload);
+  });
+
+  githubApp.webhooks.on("push", async ({ payload }) => {
+    await eventProcessor.processPush(payload);
+  });
+
+  githubApp.webhooks.on("issues", async ({ payload }) => {
+    await eventProcessor.processIssues(payload);
+  });
+
+  githubApp.webhooks.on("release", async ({ payload }) => {
+    await eventProcessor.processRelease(payload);
+  });
+
+  githubApp.webhooks.on("workflow_run", async ({ payload }) => {
+    await eventProcessor.processWorkflowRun(payload);
+  });
+
+  githubApp.webhooks.on("issue_comment", async ({ payload }) => {
+    await eventProcessor.processIssueComment(payload);
+  });
+
+  githubApp.webhooks.on("pull_request_review", async ({ payload }) => {
+    await eventProcessor.processPullRequestReview(payload);
+  });
+
+  githubApp.webhooks.on("create", async ({ payload }) => {
+    await eventProcessor.processBranchEvent(payload, "create");
+  });
+
+  githubApp.webhooks.on("delete", async ({ payload }) => {
+    await eventProcessor.processBranchEvent(payload, "delete");
+  });
+
+  console.log("✅ GitHub App webhooks registered");
+} else {
+  console.log("⚠️  GitHub App not configured - running in polling-only mode");
+}
 
 // ============================================================================
 // SLASH COMMAND HANDLERS
@@ -59,13 +132,91 @@ app.use(logger());
 // Towns webhook endpoint
 app.post("/webhook", jwtMiddleware, handler);
 
+// GitHub App webhook endpoint
+// IMPORTANT: Do not use body parsing middleware before this endpoint
+app.post("/github-webhook", async c => {
+  if (!githubApp.isEnabled()) {
+    return c.json({ error: "GitHub App not configured" }, 503);
+  }
+
+  // Get headers for webhook processing
+  const deliveryId = c.req.header("x-github-delivery");
+  const signature = c.req.header("x-hub-signature-256");
+  const event = c.req.header("x-github-event");
+
+  if (!deliveryId || !signature || !event) {
+    return c.json({ error: "Missing required headers" }, 400);
+  }
+
+  // Check idempotency
+  if (await webhookProcessor.isProcessed(deliveryId)) {
+    console.log(`Webhook ${deliveryId} already processed, skipping`);
+    return c.json({ message: "Already processed" }, 200);
+  }
+
+  try {
+    // Get raw body for signature verification
+    const body = await c.req.text();
+
+    // Use Octokit's built-in verification and processing
+    await githubApp.webhooks.verifyAndReceive({
+      id: deliveryId,
+      name: event as any,
+      signature: signature,
+      payload: body, // Must be raw string, not parsed JSON
+    });
+
+    // Mark as processed for idempotency
+    let installationId: number | undefined;
+    if (event.includes("installation")) {
+      try {
+        const parsed = JSON.parse(body) as { installation?: { id?: number } };
+        installationId = parsed.installation?.id;
+      } catch {
+        // Ignore parse errors
+      }
+    }
+    await webhookProcessor.markProcessed(
+      deliveryId,
+      installationId,
+      event,
+      "success"
+    );
+
+    return c.json({ ok: true });
+  } catch (error) {
+    console.error("Webhook processing error:", error);
+
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+
+    // Don't mark as processed - allow GitHub to retry failed webhooks
+    if (errorMessage.includes("signature")) {
+      return c.json({ error: "Invalid signature" }, 401);
+    }
+    return c.json({ error: "Processing failed" }, 500);
+  }
+});
+
 // Health check endpoint
 app.get("/health", async c => {
   const repos = await dbService.getAllSubscribedRepos();
+
+  // Get GitHub App installation count if enabled
+  let installationCount = 0;
+  if (githubApp.isEnabled()) {
+    const installations = await db.select().from(githubInstallations);
+    installationCount = installations.length;
+  }
+
   return c.json({
     status: "ok",
     subscribed_repos: repos.length,
     polling_active: true,
+    github_app: {
+      configured: githubApp.isEnabled(),
+      installations: installationCount,
+    },
   });
 });
 
@@ -76,6 +227,15 @@ app.get("/health", async c => {
 // Set the function used to send messages to Towns channels
 pollingService.setSendMessageFunction(async (channelId, message) => {
   await bot.sendMessage(channelId, message);
+});
+
+// Set dual-mode check: skip polling if GitHub App installed
+pollingService.setCheckIfRepoNeedsPolling(async (repo: string) => {
+  if (!githubApp.isEnabled()) {
+    return true; // No GitHub App, always poll
+  }
+  const installationId = await installationService.isRepoInstalled(repo);
+  return installationId === null; // Poll only if NOT installed
 });
 
 // Start polling for GitHub events

@@ -152,11 +152,37 @@ export async function handleGithubSubscription(
       await dbService.subscribe(channelId, repo, eventTypes);
 
       const eventTypeDisplay = formatEventTypes(eventTypes);
+
+      // Check GitHub App installation status (if available)
+      const { InstallationService } = await import(
+        "../github-app/installation-service"
+      );
+      const { GitHubApp } = await import("../github-app/app");
+
+      const githubApp = new GitHubApp();
+      let deliveryInfo = "⏱️ Events are checked every 5 minutes (polling mode)";
+
+      if (githubApp.isEnabled()) {
+        // Check if repo has GitHub App installed
+        const installationService = new InstallationService(null); // bot not needed for checking
+        const installationId = await installationService.isRepoInstalled(repo);
+
+        if (installationId) {
+          deliveryInfo = "⚡ Real-time webhook delivery enabled!";
+        } else {
+          // GitHub App available but not installed for this repo
+          deliveryInfo =
+            "⏱️ Events are checked every 5 minutes (polling mode)\n\n" +
+            `💡 **Want real-time notifications?** Install the GitHub App:\n` +
+            `   https://github.com/apps/${process.env.GITHUB_APP_SLUG || "towns-github-bot"}/installations/new`;
+        }
+      }
+
       await handler.sendMessage(
         channelId,
         `✅ **Subscribed to ${repo}**\n\n` +
-          `📡 Event types: **${eventTypeDisplay}**\n\n` +
-          `⏱️ Events are checked every 5 minutes.\n` +
+          `📡 Event types: **${eventTypeDisplay}**\n` +
+          `${deliveryInfo}\n\n` +
           `🔗 ${`https://github.com/${repo}`}`
       );
       break;

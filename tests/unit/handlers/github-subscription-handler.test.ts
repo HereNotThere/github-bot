@@ -77,10 +77,9 @@ describe("github subscription handler", () => {
       ).mockResolvedValue([
         { repo: "owner/repo", eventTypes: "pr,issues,commits,releases" },
       ]);
-      const unsubscribeSpy = spyOn(
-        dbService,
-        "unsubscribe"
-      ).mockResolvedValue(true);
+      const unsubscribeSpy = spyOn(dbService, "unsubscribe").mockResolvedValue(
+        true
+      );
 
       await handleGithubSubscription(mockHandler, {
         channelId: "test-channel",
@@ -439,10 +438,9 @@ describe("github subscription handler", () => {
       ).mockResolvedValue([
         { repo: "owner/repo", eventTypes: "pr,issues,commits,releases" },
       ]);
-      const unsubscribeSpy = spyOn(
-        dbService,
-        "unsubscribe"
-      ).mockResolvedValue(true);
+      const unsubscribeSpy = spyOn(dbService, "unsubscribe").mockResolvedValue(
+        true
+      );
 
       await handleGithubSubscription(mockHandler, {
         channelId: "test-channel",
@@ -465,10 +463,9 @@ describe("github subscription handler", () => {
       ).mockResolvedValue([
         { repo: "owner/repo", eventTypes: "pr,issues,commits,releases" },
       ]);
-      const unsubscribeSpy = spyOn(
-        dbService,
-        "unsubscribe"
-      ).mockResolvedValue(true);
+      const unsubscribeSpy = spyOn(dbService, "unsubscribe").mockResolvedValue(
+        true
+      );
 
       await handleGithubSubscription(mockHandler, {
         channelId: "test-channel",
@@ -542,7 +539,9 @@ describe("github subscription handler", () => {
 
       const message = mockHandler.sendMessage.mock.calls[0][1];
       expect(message).toContain("📬 **Subscribed Repositories (3):**");
-      expect(message).toContain("• facebook/react (pr, issues, commits, releases)");
+      expect(message).toContain(
+        "• facebook/react (pr, issues, commits, releases)"
+      );
       expect(message).toContain("• microsoft/vscode (pr, ci)");
       expect(message).toContain("• vercel/next.js (all)");
 

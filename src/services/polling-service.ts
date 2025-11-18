@@ -25,8 +25,8 @@ const EVENT_TYPE_MAP: Record<string, string> = {
 
 /**
  * Check if an event matches the subscription's event type filter
- * @param eventType GitHub event type (e.g., "PullRequestEvent") or null
- * @param subscriptionTypes Comma-separated event types (e.g., "pr,issues") or "all" or null
+ * @param eventType - GitHub event type (e.g., "PullRequestEvent") or null
+ * @param subscriptionTypes - Comma-separated event types (e.g., "pr,issues") or "all" or null
  */
 function isEventTypeMatch(
   eventType: string | null,
@@ -147,9 +147,36 @@ export class PollingService {
   }
 
   /**
+   * Check if a repository should use polling mode
+   * (Skip polling if GitHub App is installed for the repo)
+   */
+  private shouldPollRepo(repo: string): Promise<boolean> {
+    return this.checkIfRepoNeedsPolling
+      ? this.checkIfRepoNeedsPolling(repo)
+      : Promise.resolve(true);
+  }
+
+  private checkIfRepoNeedsPolling: ((repo: string) => Promise<boolean>) | null =
+    null;
+
+  /**
+   * Set the function to check if a repo needs polling
+   * (Used for dual-mode: skip if GitHub App installed)
+   */
+  setCheckIfRepoNeedsPolling(fn: (repo: string) => Promise<boolean>): void {
+    this.checkIfRepoNeedsPolling = fn;
+  }
+
+  /**
    * Poll a single repository for new events
    */
   private async pollRepo(repo: string): Promise<void> {
+    // Dual-mode check: Skip if GitHub App handles this repo
+    if (!(await this.shouldPollRepo(repo))) {
+      console.log(`${repo}: Skipping polling (GitHub App webhook mode)`);
+      return;
+    }
+
     // Get polling state (ETag and last seen event ID)
     const state = await dbService.getPollingState(repo);
     const etag = state?.etag;
