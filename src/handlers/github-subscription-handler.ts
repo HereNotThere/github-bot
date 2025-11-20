@@ -206,8 +206,12 @@ async function handleUnsubscribe(
     return;
   }
 
-  // Check if subscribed to this specific repo
-  if (!channelRepos.some(sub => sub.repo === repo)) {
+  // Find matching subscription case-insensitively so users can type any casing
+  const subscription = channelRepos.find(
+    sub => sub.repo.toLowerCase() === repo.toLowerCase()
+  );
+
+  if (!subscription) {
     await handler.sendMessage(
       channelId,
       `❌ Not subscribed to **${repo}**\n\nUse \`/github status\` to see your subscriptions`
@@ -215,11 +219,11 @@ async function handleUnsubscribe(
     return;
   }
 
-  // Remove subscription
+  // Remove subscription using canonical repo name from the DB
   const success = await subscriptionService.unsubscribe(
     channelId,
     spaceId,
-    repo
+    subscription.repo
   );
 
   if (success) {
