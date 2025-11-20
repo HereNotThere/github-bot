@@ -48,6 +48,9 @@ const subscriptionService = new SubscriptionService(
   installationService
 );
 
+// Enable automatic subscription upgrades when repos are added to GitHub App
+installationService.setSubscriptionService(subscriptionService);
+
 // Event processing service
 const eventProcessor = new EventProcessor(bot, subscriptionService);
 

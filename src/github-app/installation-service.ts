@@ -6,6 +6,7 @@ import type {
   InstallationRepositoriesPayload,
 } from "../types/webhooks";
 import type { GitHubApp } from "./app";
+import type { SubscriptionService } from "../services/subscription-service";
 
 /**
  * InstallationService - Manages GitHub App installation lifecycle
@@ -16,9 +17,18 @@ import type { GitHubApp } from "./app";
  */
 export class InstallationService {
   private githubApp: GitHubApp;
+  private subscriptionService?: SubscriptionService;
 
   constructor(githubApp: GitHubApp) {
     this.githubApp = githubApp;
+  }
+
+  /**
+   * Set subscription service (called after both services are initialized)
+   * Enables automatic subscription upgrades when repos are added to installation
+   */
+  setSubscriptionService(subscriptionService: SubscriptionService): void {
+    this.subscriptionService = subscriptionService;
   }
 
   /**
@@ -87,9 +97,11 @@ export class InstallationService {
     // Ensure installation record exists (handles webhook ordering issues)
     await this.ensureInstallationExists(installation.id);
 
-    // Add new repositories to normalized table
+    // Add new repositories to normalized table and upgrade subscriptions
     for (const repo of repositories_added) {
       if (!repo.full_name) continue;
+
+      // Add repository to installation
       await db
         .insert(installationRepositories)
         .values({
@@ -98,6 +110,19 @@ export class InstallationService {
           addedAt: new Date(),
         })
         .onConflictDoNothing();
+
+      // Upgrade existing polling subscriptions to webhook mode
+      if (this.subscriptionService) {
+        const upgraded = await this.subscriptionService.upgradeToWebhook(
+          repo.full_name,
+          installation.id
+        );
+        if (upgraded > 0) {
+          console.log(
+            `Upgraded ${upgraded} subscription(s) for ${repo.full_name} to webhook delivery`
+          );
+        }
+      }
     }
   }
 
