@@ -79,4 +79,15 @@ export class GitHubApp {
   isEnabled(): boolean {
     return this.app !== null && this.webhooks !== null;
   }
+
+  /**
+   * Get OAuth instance for user authentication
+   * Returns undefined if OAuth is not configured
+   */
+  getOAuth() {
+    if (!this.app) {
+      return undefined;
+    }
+    return this.app.oauth;
+  }
 }

@@ -8,31 +8,106 @@ import {
   uniqueIndex,
   check,
   index,
+  boolean,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { DEFAULT_EVENT_TYPES } from "../constants/event-types";
 
 /**
- * Stores channel subscriptions to GitHub repositories
+ * Stores OAuth tokens for GitHub users linked to Towns users
  */
-export const subscriptions = pgTable(
-  "subscriptions",
+export const githubUserTokens = pgTable(
+  "github_user_tokens",
   {
-    id: serial("id").primaryKey(),
+    townsUserId: text("towns_user_id").primaryKey(),
+    githubUserId: integer("github_user_id").notNull(),
+    githubLogin: text("github_login").notNull(),
+    accessToken: text("access_token").notNull(), // Encrypted
+    tokenType: text("token_type").notNull(),
+    scope: text("scope"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    refreshToken: text("refresh_token"),
+    refreshTokenExpiresAt: timestamp("refresh_token_expires_at", {
+      withTimezone: true,
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+  },
+  table => ({
+    // Enforce 1:1 mapping between GitHub accounts and Towns users
+    githubUserIdUnique: uniqueIndex(
+      "github_user_tokens_github_user_id_unique"
+    ).on(table.githubUserId),
+  })
+);
+
+/**
+ * Stores OAuth state parameters for security during OAuth flow
+ */
+export const oauthStates = pgTable(
+  "oauth_states",
+  {
+    state: text("state").primaryKey(),
+    townsUserId: text("towns_user_id").notNull(),
     channelId: text("channel_id").notNull(),
-    repo: text("repo").notNull(), // Format: "owner/repo"
-    eventTypes: text("event_types").notNull().default(DEFAULT_EVENT_TYPES), // Comma-separated event types
+    spaceId: text("space_id").notNull(),
+    redirectAction: text("redirect_action"), // 'subscribe' etc
+    redirectData: text("redirect_data"), // JSON string with additional context
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
   },
   table => ({
-    uniqueChannelRepo: uniqueIndex("subscriptions_channel_repo_idx").on(
-      table.channelId,
-      table.repo
+    expiresIndex: index("idx_oauth_states_expires").on(table.expiresAt),
+    townsUserIndex: index("idx_oauth_states_towns_user_id").on(
+      table.townsUserId
     ),
-    channelIndex: index("idx_subscriptions_channel").on(table.channelId),
-    repoIndex: index("idx_subscriptions_repo").on(table.repo),
   })
 );
+
+/**
+ * Stores channel subscriptions to GitHub repositories with delivery mode tracking
+ * Replaces the legacy subscriptions table with OAuth and private repo support
+ */
+export const githubSubscriptions = pgTable(
+  "github_subscriptions",
+  {
+    id: serial("id").primaryKey(),
+    spaceId: text("space_id").notNull(),
+    channelId: text("channel_id").notNull(),
+    repoFullName: text("repo_full_name").notNull(), // Format: "owner/repo"
+    deliveryMode: text("delivery_mode").notNull(), // 'webhook' or 'polling'
+    isPrivate: boolean("is_private").notNull(),
+    createdByTownsUserId: text("created_by_towns_user_id")
+      .notNull()
+      .references(() => githubUserTokens.townsUserId, { onDelete: "cascade" }),
+    createdByGithubLogin: text("created_by_github_login"),
+    installationId: integer("installation_id").references(
+      () => githubInstallations.installationId,
+      { onDelete: "set null" }
+    ),
+    enabled: boolean("enabled").notNull().default(true),
+    eventTypes: text("event_types").notNull().default(DEFAULT_EVENT_TYPES), // Comma-separated event types
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+  },
+  table => ({
+    deliveryModeCheck: check(
+      "delivery_mode_check",
+      sql`${table.deliveryMode} IN ('webhook', 'polling')`
+    ),
+    uniqueSubscription: uniqueIndex("github_subscriptions_unique_idx").on(
+      table.spaceId,
+      table.channelId,
+      table.repoFullName
+    ),
+    channelIndex: index("idx_github_subscriptions_channel").on(table.channelId),
+    repoIndex: index("idx_github_subscriptions_repo").on(table.repoFullName),
+  })
+);
+
+// Temporary alias for backward compatibility with DatabaseService
+// TODO: Remove after SubscriptionService is implemented and DatabaseService is deleted
+export const subscriptions = githubSubscriptions;
 
 /**
  * Stores polling state for each subscribed repository

@@ -13,6 +13,9 @@ import { WebhookProcessor } from "./github-app/webhook-processor";
 import { InstallationService } from "./github-app/installation-service";
 import { EventProcessor } from "./github-app/event-processor";
 import { handleGitHubWebhook } from "./routes/github-webhook";
+import { handleOAuthCallback } from "./routes/oauth-callback";
+import { GitHubOAuthService } from "./services/github-oauth-service";
+import { OAuthCleanupService } from "./services/oauth-cleanup-service";
 
 await dbReady;
 console.log("✅ Database ready (schema ensured)");
@@ -33,6 +36,8 @@ const githubApp = new GitHubApp();
 const webhookProcessor = new WebhookProcessor();
 const installationService = new InstallationService(bot);
 const eventProcessor = new EventProcessor(bot);
+const oauthService = new GitHubOAuthService(githubApp);
+const oauthCleanupService = new OAuthCleanupService();
 
 // Register webhook event handlers (only if GitHub App is configured)
 if (githubApp.isEnabled()) {
@@ -136,7 +141,11 @@ app.use(logger());
 // Towns webhook endpoint
 app.post("/webhook", jwtMiddleware, handler);
 
+// OAuth callback endpoint
+app.get("/oauth/callback", c => handleOAuthCallback(c, oauthService, bot));
+
 // GitHub App webhook endpoint
+// IMPORTANT: Do not use body parsing middleware before this endpoint
 app.post("/github-webhook", c =>
   handleGitHubWebhook(c, githubApp, webhookProcessor)
 );
@@ -185,5 +194,14 @@ pollingService.setCheckIfRepoNeedsPolling(async (repo: string) => {
 pollingService.start();
 
 console.log("✅ GitHub polling service started (5 minute intervals)");
+
+// ============================================================================
+// START OAUTH CLEANUP SERVICE
+// ============================================================================
+
+// Start periodic cleanup of expired OAuth states (every hour)
+oauthCleanupService.startPeriodicCleanup();
+
+console.log("✅ OAuth cleanup service started (hourly cleanup)");
 
 export default app;

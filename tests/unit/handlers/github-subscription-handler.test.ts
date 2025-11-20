@@ -23,7 +23,7 @@ describe("github subscription handler", () => {
       expect(mockHandler.sendMessage).toHaveBeenCalledWith(
         "test-channel",
         "**Usage:**\n" +
-        "• `/github subscribe owner/repo [--events pr,issues,commits,releases,ci,comments,reviews,branches,review_comments,stars,forks,all]` - Subscribe to GitHub events\n" +
+          "• `/github subscribe owner/repo [--events pr,issues,commits,releases,ci,comments,reviews,branches,review_comments,stars,forks,all]` - Subscribe to GitHub events\n" +
           "• `/github unsubscribe owner/repo` - Unsubscribe from a repository\n" +
           "• `/github status` - Show current subscriptions"
       );

@@ -5,7 +5,7 @@
     "url": "https://github-bot-alpha.onrender.com/github-webhook",
     "active": true
   },
-  "redirect_url": "https://github-bot-alpha.onrender.com/health",
+  "redirect_url": "https://github-bot-alpha.onrender.com/oauth/callback",
   "description": "Real-time GitHub notifications for Towns Protocol channels. Subscribe to repositories and receive instant webhook notifications for PRs, issues, commits, releases, and more.",
   "public": true,
   "default_permissions": {
