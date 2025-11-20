@@ -1,6 +1,6 @@
 {
-  "name": "my-bot",
-  "version": "0.0.1",
+  "name": "towns-github-bot",
+  "version": "1.0.0",
   "type": "module",
   "main": "src/index.ts",
   "scripts": {
