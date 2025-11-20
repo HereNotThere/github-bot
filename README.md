@@ -7,7 +7,9 @@ A comprehensive GitHub integration bot for Towns Protocol, similar to Slack's Gi
 This bot brings GitHub notifications and interactions directly into your Towns channels:
 
 ### 🔔 Webhook Notifications
+
 Receive real-time notifications for:
+
 - **Pull Requests** - Opened, closed, merged
 - **Issues** - Opened, closed, labeled
 - **Pushes** - Commits to branches with details
@@ -19,22 +21,26 @@ Receive real-time notifications for:
 ### 💬 Slash Commands
 
 **Subscription Management:**
+
 - `/github subscribe owner/repo` - Subscribe channel to repository events
 - `/github unsubscribe owner/repo` - Unsubscribe from a repository
 - `/github status` - Show current subscriptions
 
 **Query Commands:**
+
 - `/gh_pr owner/repo #123 [--full]` - Display single pull request details
 - `/gh_pr list owner/repo [count] [--state=...] [--author=...]` - List recent pull requests
 - `/gh_issue owner/repo #123 [--full]` - Display single issue details
 - `/gh_issue list owner/repo [count] [--state=...] [--creator=...]` - List recent issues
 
 **Filters:**
+
 - `--state=open|closed|merged|all` - Filter by state (merged only for PRs)
 - `--author=username` - Filter PRs by author
 - `--creator=username` - Filter issues by creator
 
 **Other:**
+
 - `/help` - Show all available commands
 
 ## Features Demonstrated
@@ -50,6 +56,7 @@ Receive real-time notifications for:
 ## Setup
 
 ### 1. Prerequisites
+
 - Bun installed (`curl -fsSL https://bun.sh/install | bash`)
 - GitHub account (for creating Personal Access Token)
 - Towns bot created via Developer Portal (app.towns.com/developer)
@@ -57,6 +64,7 @@ Receive real-time notifications for:
 ### 2. Local Development Setup
 
 1. **Clone and install dependencies**
+
    ```bash
    git clone <your-repo>
    cd github-bot
@@ -64,15 +72,22 @@ Receive real-time notifications for:
    ```
 
 2. **Configure environment variables**
+
    ```bash
    cp .env.sample .env
    ```
 
    Edit `.env` with your values:
+
    ```
    APP_PRIVATE_DATA=<from Towns Developer Portal>
    JWT_SECRET=<from Towns Developer Portal>
    PORT=5123
+
+   # Database (Render Postgres)
+   DATABASE_URL=postgresql://user:pass@host:5432/github_bot
+   DATABASE_SSL=true
+   DATABASE_POOL_SIZE=5
 
    # GitHub Integration
    GITHUB_TOKEN=<your GitHub Personal Access Token>
@@ -80,26 +95,50 @@ Receive real-time notifications for:
    PUBLIC_URL=https://your-bot.onrender.com
    ```
 
-3. **Run the bot locally**
+3. **Start Postgres locally for development**
+
+   You can run Postgres in Docker with a single command:
+
+   ```bash
+   docker run --rm --name github-bot-db \
+     -e POSTGRES_USER=postgres \
+     -e POSTGRES_PASSWORD=postgres \
+     -e POSTGRES_DB=github_bot \
+     -p 5432:5432 \
+     postgres:18
+   ```
+
+   Then point your `.env` at the container:
+
+   ```
+   DATABASE_URL=postgresql://postgres:postgres@localhost:5432/github_bot
+   DATABASE_SSL=false
+   ```
+
+4. **Run the bot locally**
+
    ```bash
    bun run dev
    ```
 
-4. **Expose webhook with ngrok** (for testing)
+5. **Expose webhook with ngrok** (for testing)
+
    ```bash
    ngrok http 5123
    ```
 
-5. **Update webhook URL in Developer Portal**
+6. **Update webhook URL in Developer Portal**
    - Set to: `https://your-ngrok-url.ngrok-free.app/webhook`
 
 ## Environment Variables
 
 ### Required
+
 - `APP_PRIVATE_DATA` - Your Towns bot private key (from Developer Portal)
 - `JWT_SECRET` - JWT secret for webhook authentication (from Developer Portal)
 
 ### Optional (but recommended for GitHub features)
+
 - `GITHUB_TOKEN` - GitHub Personal Access Token (see below)
 - `GITHUB_WEBHOOK_SECRET` - Secret for GitHub webhook signature verification
 - `PUBLIC_URL` - Your bot's public URL (e.g., https://your-bot.onrender.com)
@@ -134,10 +173,12 @@ The bot uses a GitHub PAT to query the GitHub API for public repositories.
    - Paste into your `.env` file as `GITHUB_TOKEN`
 
 ### Rate Limits
+
 - **Without token**: 60 requests/hour (not recommended)
 - **With PAT**: 5,000 requests/hour (recommended for production)
 
 ### Security Notes
+
 - **Never commit** your PAT to git
 - `.env` is in `.gitignore` by default
 - Use environment variables in production (Render, Railway, etc.)
@@ -148,6 +189,7 @@ The bot uses a GitHub PAT to query the GitHub API for public repositories.
 ### Subscribe to GitHub Repository
 
 1. In a Towns channel, run:
+
    ```
    /github subscribe facebook/react
    ```
@@ -165,6 +207,7 @@ The bot uses a GitHub PAT to query the GitHub API for public repositories.
 ### Query GitHub Data
 
 **Show single PR or issue:**
+
 ```
 /gh_pr facebook/react 123         # Show PR details (summary)
 /gh_pr facebook/react #123 --full # Show PR with full description
@@ -173,6 +216,7 @@ The bot uses a GitHub PAT to query the GitHub API for public repositories.
 ```
 
 **List recent PRs or issues:**
+
 ```
 /gh_pr list facebook/react 10                    # List 10 most recent PRs
 /gh_pr list facebook/react 5 --state=open        # List 5 open PRs
@@ -184,6 +228,7 @@ The bot uses a GitHub PAT to query the GitHub API for public repositories.
 ```
 
 **Check subscriptions:**
+
 ```
 /github status                    # Show current subscriptions
 ```

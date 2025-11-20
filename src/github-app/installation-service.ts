@@ -206,13 +206,20 @@ export class InstallationService {
    * Returns installation ID if installed, null otherwise
    */
   async isRepoInstalled(repo: string): Promise<number | null> {
-    // Query normalized table with proper indexing
-    const installation = await db
-      .select()
-      .from(installationRepositories)
-      .where(eq(installationRepositories.repoFullName, repo))
-      .limit(1);
+    try {
+      const installation = await db
+        .select()
+        .from(installationRepositories)
+        .where(eq(installationRepositories.repoFullName, repo))
+        .limit(1);
 
-    return installation[0]?.installationId ?? null;
+      return installation[0]?.installationId ?? null;
+    } catch (error) {
+      console.warn(
+        `[InstallationService] Failed to check repo installation for ${repo}:`,
+        error
+      );
+      return null;
+    }
   }
 }

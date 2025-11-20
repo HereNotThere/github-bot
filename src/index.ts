@@ -6,12 +6,15 @@ import { handleGhIssue } from "./handlers/gh-issue-handler";
 import { handleGhPr } from "./handlers/gh-pr-handler";
 import { handleGithubSubscription } from "./handlers/github-subscription-handler";
 import { pollingService } from "./services/polling-service";
-import { db, dbService } from "./db";
+import { db, dbService, dbReady } from "./db";
 import { githubInstallations } from "./db/schema";
 import { GitHubApp } from "./github-app/app";
 import { WebhookProcessor } from "./github-app/webhook-processor";
 import { InstallationService } from "./github-app/installation-service";
 import { EventProcessor } from "./github-app/event-processor";
+
+await dbReady;
+console.log("✅ Database ready (schema ensured)");
 
 const bot = await makeTownsBot(
   process.env.APP_PRIVATE_DATA!,

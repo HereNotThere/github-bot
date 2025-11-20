@@ -1,28 +1,36 @@
 import {
-  sqliteTable,
+  pgTable,
+  serial,
   text,
+  timestamp,
   integer,
-  unique,
   primaryKey,
+  uniqueIndex,
   check,
-} from "drizzle-orm/sqlite-core";
+  index,
+} from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { DEFAULT_EVENT_TYPES } from "../constants/event-types";
 
 /**
  * Stores channel subscriptions to GitHub repositories
  */
-export const subscriptions = sqliteTable(
+export const subscriptions = pgTable(
   "subscriptions",
   {
-    id: integer("id").primaryKey({ autoIncrement: true }),
+    id: serial("id").primaryKey(),
     channelId: text("channel_id").notNull(),
     repo: text("repo").notNull(), // Format: "owner/repo"
     eventTypes: text("event_types").notNull().default(DEFAULT_EVENT_TYPES), // Comma-separated event types
-    createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
   },
   table => ({
-    uniqueChannelRepo: unique().on(table.channelId, table.repo),
+    uniqueChannelRepo: uniqueIndex("subscriptions_channel_repo_idx").on(
+      table.channelId,
+      table.repo
+    ),
+    channelIndex: index("idx_subscriptions_channel").on(table.channelId),
+    repoIndex: index("idx_subscriptions_repo").on(table.repo),
   })
 );
 
@@ -30,26 +38,26 @@ export const subscriptions = sqliteTable(
  * Stores polling state for each subscribed repository
  * Tracks ETags and last seen event IDs for efficient polling
  */
-export const repoPollingState = sqliteTable("repo_polling_state", {
+export const repoPollingState = pgTable("repo_polling_state", {
   repo: text("repo").primaryKey(), // Format: "owner/repo"
   etag: text("etag"), // GitHub ETag for conditional requests
   lastEventId: text("last_event_id"), // Last seen event ID to avoid duplicates
-  lastPolledAt: integer("last_polled_at", { mode: "timestamp" }),
-  updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
+  lastPolledAt: timestamp("last_polled_at", { withTimezone: true }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
 });
 
 /**
  * Stores GitHub App installations
  * Tracks which accounts have installed the GitHub App
  */
-export const githubInstallations = sqliteTable(
+export const githubInstallations = pgTable(
   "github_installations",
   {
     installationId: integer("installation_id").primaryKey(),
     accountLogin: text("account_login").notNull(),
     accountType: text("account_type").notNull(), // "Organization" or "User"
-    installedAt: integer("installed_at", { mode: "timestamp" }).notNull(),
-    suspendedAt: integer("suspended_at", { mode: "timestamp" }),
+    installedAt: timestamp("installed_at", { withTimezone: true }).notNull(),
+    suspendedAt: timestamp("suspended_at", { withTimezone: true }),
     appSlug: text("app_slug").notNull().default("towns-github-bot"),
   },
   table => ({
@@ -64,7 +72,7 @@ export const githubInstallations = sqliteTable(
  * Stores repositories for each GitHub App installation
  * Normalized table - NO JSON columns (proper SQLite design)
  */
-export const installationRepositories = sqliteTable(
+export const installationRepositories = pgTable(
   "installation_repositories",
   {
     installationId: integer("installation_id")
@@ -73,10 +81,14 @@ export const installationRepositories = sqliteTable(
         onDelete: "cascade",
       }),
     repoFullName: text("repo_full_name").notNull(), // Format: "owner/repo"
-    addedAt: integer("added_at", { mode: "timestamp" }).notNull(),
+    addedAt: timestamp("added_at", { withTimezone: true }).notNull(),
   },
   table => ({
     pk: primaryKey({ columns: [table.installationId, table.repoFullName] }),
+    repoIndex: index("idx_installation_repos_by_name").on(table.repoFullName),
+    installationIndex: index("idx_installation_repos_by_install").on(
+      table.installationId
+    ),
   })
 );
 
@@ -84,13 +96,13 @@ export const installationRepositories = sqliteTable(
  * Stores webhook delivery tracking for idempotency
  * Uses X-GitHub-Delivery header as primary key
  */
-export const webhookDeliveries = sqliteTable(
+export const webhookDeliveries = pgTable(
   "webhook_deliveries",
   {
     deliveryId: text("delivery_id").primaryKey(), // X-GitHub-Delivery header value
     installationId: integer("installation_id"),
     eventType: text("event_type").notNull(),
-    deliveredAt: integer("delivered_at", { mode: "timestamp" }).notNull(),
+    deliveredAt: timestamp("delivered_at", { withTimezone: true }).notNull(),
     status: text("status").notNull().default("pending"), // "pending", "success", "failed"
     error: text("error"),
     retryCount: integer("retry_count").notNull().default(0),
@@ -99,6 +111,10 @@ export const webhookDeliveries = sqliteTable(
     statusCheck: check(
       "status_check",
       sql`${table.status} IN ('pending', 'success', 'failed')`
+    ),
+    statusIndex: index("idx_deliveries_status").on(
+      table.status,
+      table.deliveredAt
     ),
   })
 );

@@ -1,79 +1,51 @@
-import { Database } from "bun:sqlite";
-import { drizzle } from "drizzle-orm/bun-sqlite";
+import postgres from "postgres";
+import { drizzle } from "drizzle-orm/postgres-js";
+import { migrate } from "drizzle-orm/postgres-js/migrator";
 import { eq, and } from "drizzle-orm";
+import { resolve } from "node:path";
 import { subscriptions, repoPollingState } from "./schema";
 import { DEFAULT_EVENT_TYPES } from "../constants/event-types";
 
-const sqlite = new Database("github-bot.db");
-export const db = drizzle(sqlite);
+const connectionString =
+  process.env.DATABASE_URL ?? "postgresql://localhost:5432/github-bot";
 
-// Migration: Add event_types column if it doesn't exist
-const tableInfo = sqlite
-  .prepare("PRAGMA table_info(subscriptions)")
-  .all() as Array<{ name: string }>;
-
-const hasEventTypesColumn = tableInfo.some(col => col.name === "event_types");
-
-if (!hasEventTypesColumn && tableInfo.length > 0) {
-  console.log("Migrating subscriptions table: adding event_types column");
-  sqlite.exec(`
-    ALTER TABLE subscriptions
-    ADD COLUMN event_types TEXT NOT NULL DEFAULT '${DEFAULT_EVENT_TYPES}'
-  `);
+if (!process.env.DATABASE_URL) {
+  console.warn(
+    "[db] DATABASE_URL not set. Falling back to local postgres://localhost:5432/github-bot"
+  );
 }
 
-// Create tables if they don't exist
-sqlite.exec(`
-  CREATE TABLE IF NOT EXISTS subscriptions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    channel_id TEXT NOT NULL,
-    repo TEXT NOT NULL,
-    event_types TEXT NOT NULL DEFAULT '${DEFAULT_EVENT_TYPES}',
-    created_at INTEGER NOT NULL,
-    UNIQUE(channel_id, repo)
-  );
+const sslRequired =
+  process.env.DATABASE_SSL === "true" ||
+  process.env.RENDER === "true" ||
+  process.env.NODE_ENV === "production";
 
-  CREATE TABLE IF NOT EXISTS repo_polling_state (
-    repo TEXT PRIMARY KEY,
-    etag TEXT,
-    last_event_id TEXT,
-    last_polled_at INTEGER,
-    updated_at INTEGER NOT NULL
-  );
+const maxConnections = Number.parseInt(
+  process.env.DATABASE_POOL_SIZE ?? "",
+  10
+);
 
-  CREATE TABLE IF NOT EXISTS github_installations (
-    installation_id INTEGER PRIMARY KEY,
-    account_login TEXT NOT NULL,
-    account_type TEXT NOT NULL CHECK(account_type IN ('Organization', 'User')),
-    installed_at INTEGER NOT NULL,
-    suspended_at INTEGER,
-    app_slug TEXT NOT NULL DEFAULT 'towns-github-bot'
-  );
+const client = postgres(connectionString, {
+  ssl: sslRequired ? { rejectUnauthorized: false } : undefined,
+  max: Number.isFinite(maxConnections) ? maxConnections : undefined,
+});
 
-  CREATE TABLE IF NOT EXISTS installation_repositories (
-    installation_id INTEGER NOT NULL,
-    repo_full_name TEXT NOT NULL,
-    added_at INTEGER NOT NULL,
-    PRIMARY KEY (installation_id, repo_full_name),
-    FOREIGN KEY (installation_id) REFERENCES github_installations(installation_id) ON DELETE CASCADE
-  );
+export const db = drizzle(client);
 
-  CREATE TABLE IF NOT EXISTS webhook_deliveries (
-    delivery_id TEXT PRIMARY KEY,
-    installation_id INTEGER,
-    event_type TEXT NOT NULL,
-    delivered_at INTEGER NOT NULL,
-    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'success', 'failed')),
-    error TEXT,
-    retry_count INTEGER NOT NULL DEFAULT 0
-  );
+const migrationsFolder = process.env.DRIZZLE_MIGRATIONS_PATH
+  ? resolve(process.cwd(), process.env.DRIZZLE_MIGRATIONS_PATH)
+  : resolve(process.cwd(), "drizzle");
 
-  CREATE INDEX IF NOT EXISTS idx_subscriptions_channel ON subscriptions(channel_id);
-  CREATE INDEX IF NOT EXISTS idx_subscriptions_repo ON subscriptions(repo);
-  CREATE INDEX IF NOT EXISTS idx_installation_repos_by_name ON installation_repositories(repo_full_name);
-  CREATE INDEX IF NOT EXISTS idx_installation_repos_by_install ON installation_repositories(installation_id);
-  CREATE INDEX IF NOT EXISTS idx_deliveries_status ON webhook_deliveries(status, delivered_at);
-`);
+/**
+ * Automatically run database migrations on startup so we don't rely on manual CLI steps.
+ * Exported promise allows callers to await readiness.
+ */
+export const dbReady = migrate(db, {
+  migrationsFolder,
+}).catch(error => {
+  console.error("Failed to run database migrations", error);
+  throw error;
+});
 
 /**
  * Database service for managing subscriptions and polling state
@@ -89,31 +61,24 @@ export class DatabaseService {
     repo: string,
     eventTypes: string = DEFAULT_EVENT_TYPES
   ): Promise<void> {
-    try {
-      await db.insert(subscriptions).values({
+    await db
+      .insert(subscriptions)
+      .values({
         channelId,
         repo,
         eventTypes,
         createdAt: new Date(),
+      })
+      .onConflictDoNothing({
+        target: [subscriptions.channelId, subscriptions.repo],
       });
-    } catch (error) {
-      // Ignore UNIQUE constraint violations (already subscribed)
-      // SQLite error code for UNIQUE constraint: SQLITE_CONSTRAINT
-      if (
-        error instanceof Error &&
-        error.message.includes("UNIQUE constraint failed")
-      ) {
-        return; // Already subscribed, no-op
-      }
-      throw error; // Re-throw other errors
-    }
   }
 
   /**
    * Unsubscribe a channel from a repository
    */
   async unsubscribe(channelId: string, repo: string): Promise<boolean> {
-    const result = db
+    const result = await db
       .delete(subscriptions)
       .where(
         and(
@@ -121,12 +86,9 @@ export class DatabaseService {
           eq(subscriptions.repo, repo)
         )
       )
-      .run() as unknown as {
-      changes: number;
-      lastInsertRowid: number | bigint;
-    };
+      .returning({ id: subscriptions.id });
 
-    return result.changes > 0;
+    return result.length > 0;
   }
 
   /**
