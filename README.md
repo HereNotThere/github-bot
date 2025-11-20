@@ -4,19 +4,22 @@ A comprehensive GitHub integration bot for Towns Protocol, similar to Slack's Gi
 
 ## What This Bot Does
 
-This bot brings GitHub notifications and interactions directly into your Towns channels:
+This bot brings GitHub notifications and interactions directly into your Towns channels using OAuth and GitHub App integration:
 
-### 🔔 Webhook Notifications
+### 🔔 Real-Time Notifications
 
-Receive real-time notifications for:
+Receive instant webhook notifications for:
 
 - **Pull Requests** - Opened, closed, merged
-- **Issues** - Opened, closed, labeled
+- **Issues** - Opened, closed
 - **Pushes** - Commits to branches with details
 - **Releases** - New releases published
 - **CI/CD** - Workflow run status (success/failure)
 - **Comments** - New comments on issues/PRs
 - **Reviews** - PR review submissions
+- **Branches** - Branch/tag creation and deletion
+- **Forks** - Repository forks
+- **Stars** - Repository stars (watch events)
 
 ### 💬 Slash Commands
 
@@ -43,23 +46,25 @@ Receive real-time notifications for:
 
 - `/help` - Show all available commands
 
-## Features Demonstrated
+## Features
 
-- External webhook integration (GitHub → Towns)
-- Subscription management (channel-based)
-- GitHub API integration via official Octokit SDK
-- Webhook signature verification
-- Multi-event formatters
-- Real-time notifications to multiple channels
-- Advanced filtering for PRs and issues (by state, author, creator)
+- **GitHub App Integration** - Official GitHub App with OAuth authentication
+- **Dual Delivery Modes** - Real-time webhooks OR 5-minute polling fallback
+- **OAuth-First Architecture** - Users authenticate with their GitHub account
+- **Private Repository Support** - Access private repos with user permissions
+- **Smart Delivery** - Automatic webhook mode when GitHub App is installed
+- **Event Filtering** - Subscribe to specific event types (pr, issues, commits, etc.)
+- **Channel-Based Subscriptions** - Each channel has independent subscriptions
+- **Persistent Storage** - PostgreSQL database with Drizzle ORM
 
 ## Setup
 
 ### 1. Prerequisites
 
 - Bun installed (`curl -fsSL https://bun.sh/install | bash`)
-- GitHub account (for creating Personal Access Token)
+- PostgreSQL database (local Docker or hosted on Render/Neon)
 - Towns bot created via Developer Portal (app.towns.com/developer)
+- GitHub App created (optional - enables real-time webhooks)
 
 ### 2. Local Development Setup
 
@@ -84,16 +89,21 @@ Receive real-time notifications for:
    JWT_SECRET=<from Towns Developer Portal>
    PORT=5123
 
-   # Database (Render Postgres)
+   # Database (Required)
    DATABASE_URL=postgresql://user:pass@host:5432/github-bot
    DATABASE_SSL=true
    DATABASE_POOL_SIZE=5
    DATABASE_CA_CERT_PATH=/path/to/ca.pem   # optional - custom CA bundle
    DEV_DISABLE_SSL_VALIDATION=false        # only for local dev if needed
 
-   # GitHub Integration
-   GITHUB_TOKEN=<your GitHub Personal Access Token>
+   # GitHub App (Optional - enables real-time webhooks)
+   GITHUB_APP_ID=123456
+   GITHUB_APP_PRIVATE_KEY=<base64 encoded private key>
+   GITHUB_CLIENT_ID=Iv1.abc123
+   GITHUB_CLIENT_SECRET=<your client secret>
    GITHUB_WEBHOOK_SECRET=<random secret for webhook security>
+
+   # Public URL (Required for OAuth callbacks)
    PUBLIC_URL=https://your-bot.onrender.com
    ```
 
@@ -150,73 +160,80 @@ Receive real-time notifications for:
 
 - `APP_PRIVATE_DATA` - Your Towns bot private key (from Developer Portal)
 - `JWT_SECRET` - JWT secret for webhook authentication (from Developer Portal)
+- `DATABASE_URL` - PostgreSQL connection string
+- `PUBLIC_URL` - Your bot's public URL (required for OAuth callbacks)
 
-### Optional (but recommended for GitHub features)
+### Optional (Recommended for Real-Time Webhooks)
 
-- `GITHUB_TOKEN` - GitHub Personal Access Token (see below)
-- `GITHUB_WEBHOOK_SECRET` - Secret for GitHub webhook signature verification
-- `PUBLIC_URL` - Your bot's public URL (e.g., https://your-bot.onrender.com)
-- `PORT` - Port to run on (default: 5123)
+- `GITHUB_APP_ID` - GitHub App ID
+- `GITHUB_APP_PRIVATE_KEY` - Base64-encoded GitHub App private key
+- `GITHUB_CLIENT_ID` - GitHub OAuth App client ID
+- `GITHUB_CLIENT_SECRET` - GitHub OAuth App client secret
+- `GITHUB_WEBHOOK_SECRET` - Secret for webhook signature verification
+- `PORT` - Port to run on (default: 3000)
 
-## Getting GitHub Personal Access Token (PAT)
+### Database Options
 
-The bot uses a GitHub PAT to query the GitHub API for public repositories.
+- `DATABASE_SSL` - Enable SSL for database connection (default: false)
+- `DATABASE_POOL_SIZE` - Connection pool size (default: 10)
+- `DATABASE_CA_CERT_PATH` - Path to custom CA certificate
+- `DEV_DISABLE_SSL_VALIDATION` - Disable SSL validation (development only)
 
-### Steps to Create a GitHub PAT:
+## GitHub App Setup (Optional)
 
-1. **Go to GitHub Settings**
-   - Visit: https://github.com/settings/tokens
-   - Click "Personal access tokens" → "Tokens (classic)"
+Without a GitHub App, the bot uses **polling mode** (checks every 5 minutes).
+With a GitHub App, the bot uses **webhook mode** (instant notifications).
 
-2. **Generate New Token**
-   - Click "Generate new token (classic)"
-   - Name: `Towns Bot - Public Repos`
-   - Expiration: Choose your preference (90 days recommended)
+### Quick Setup
 
-3. **Select Scopes**
-
-   For **public repos only** (MVP), you need minimal scopes:
-   - ✅ `public_repo` - Access public repositories
-
-   **OR** if you want full access:
-   - ✅ `repo` - Full control of private repositories (includes public)
-
-4. **Generate and Copy**
-   - Click "Generate token"
-   - **Copy the token immediately** (you won't see it again!)
-   - Paste into your `.env` file as `GITHUB_TOKEN`
-
-### Rate Limits
-
-- **Without token**: 60 requests/hour (not recommended)
-- **With PAT**: 5,000 requests/hour (recommended for production)
-
-### Security Notes
-
-- **Never commit** your PAT to git
-- `.env` is in `.gitignore` by default
-- Use environment variables in production (Render, Railway, etc.)
-- Regenerate token if accidentally exposed
+1. Visit `https://github.com/settings/apps/new`
+2. Fill in basic info:
+   - Name: `Towns GitHub Bot`
+   - Homepage URL: `https://github.com/your-org/towns-github-bot`
+   - Webhook URL: `https://your-bot.onrender.com/github-webhook`
+   - Webhook Secret: Generate a random secret
+3. Permissions:
+   - Repository: Contents (read), Issues (read), Pull requests (read), Metadata (read)
+   - Organization: Members (read)
+4. Subscribe to events: pull_request, push, issues, release, workflow_run, issue_comment, pull_request_review, create, delete, fork, watch
+5. Create the app and note down:
+   - App ID
+   - Client ID
+   - Client Secret
+   - Generate and download private key
+6. Base64 encode the private key: `base64 -i your-key.pem`
+7. Add all values to your `.env` file
 
 ## Usage
 
 ### Subscribe to GitHub Repository
 
-1. In a Towns channel, run:
+1. **First-time OAuth** - In a Towns channel, run:
 
    ```
-   /github subscribe facebook/react
+   /github subscribe owner/repo
    ```
 
-2. Follow the instructions to configure the GitHub webhook:
-   - Go to `https://github.com/facebook/react/settings/hooks/new`
-   - Payload URL: `https://your-bot.onrender.com/github-webhook`
-   - Content type: `application/json`
-   - Secret: (value of `GITHUB_WEBHOOK_SECRET`)
-   - Events: Select individual events or "Send me everything"
-   - Click "Add webhook"
+2. **Authenticate** - Click the OAuth link to connect your GitHub account
 
-3. Start receiving notifications!
+3. **Start receiving notifications!**
+   - **With GitHub App installed**: Real-time webhooks (instant)
+   - **Without GitHub App**: Polling mode (every 5 minutes)
+
+4. **Optional: Install GitHub App** for real-time notifications:
+   - Bot will provide an install link if not already installed
+   - Install on your personal account or organization
+   - Repos with the app installed automatically get webhook delivery
+
+### Filter Events
+
+Subscribe to specific event types:
+
+```
+/github subscribe owner/repo --events pr,issues,commits
+```
+
+Available event types: `pr`, `issues`, `commits`, `releases`, `ci`, `comments`, `reviews`, `branches`, `forks`, `stars`
 
 ### Query GitHub Data
 
@@ -249,6 +266,8 @@ The bot uses a GitHub PAT to query the GitHub API for public repositories.
 
 ## Supported GitHub Events
 
+### Webhook Events (Real-Time)
+
 - `pull_request` - Opened, closed, merged
 - `issues` - Opened, closed
 - `push` - Commits to branches
@@ -256,20 +275,15 @@ The bot uses a GitHub PAT to query the GitHub API for public repositories.
 - `workflow_run` - CI/CD status
 - `issue_comment` - New comments
 - `pull_request_review` - PR reviews
+- `create` / `delete` - Branch/tag creation and deletion
+- `fork` - Repository forks
+- `watch` - Repository stars
 
-## Code Structure
+### Polling Events (5-Minute Intervals)
 
-```
-src/
-├── index.ts       # Main bot logic
-│   ├── Storage (in-memory maps)
-│   ├── GitHub API helpers
-│   ├── Event formatters
-│   ├── Slash command handlers
-│   ├── GitHub webhook endpoint
-│   └── Hono app setup
-└── commands.ts    # Slash command definitions
-```
+All webhook events above, plus:
+
+- `pull_request_review_comment` - Review comments
 
 ## Production Deployment
 
@@ -279,16 +293,17 @@ src/
 4. **Update webhook URL** in Developer Portal
 5. **Test with `/help` command**
 
-## Limitations (MVP)
+## Current Limitations
 
-- **Public repos only** - No OAuth, uses bot's PAT
-- **No interactive actions** - Towns doesn't support buttons yet
-- **No private repo access** - Would require per-user OAuth
+- **No interactive actions** - Towns Protocol doesn't support buttons/forms yet
+- **No threaded conversations** - All notifications sent as top-level messages
+- **5-minute polling delay** - Without GitHub App, events have 5-minute latency
 
 ## Future Enhancements
 
-- [ ] Per-user OAuth for private repository access
-- [ ] More slash commands (`/gh_pr search`, `/gh_release list`)
+- [ ] Automatic subscription upgrade when GitHub App is installed
+- [ ] More slash commands (`/gh search`, `/gh_release list`)
 - [ ] Scheduled digests (daily/weekly summaries)
 - [ ] Thread organization for related webhook events
 - [ ] Advanced filtering (labels, assignees, milestones)
+- [ ] PR/Issue status commands (`/gh_pr merge`, `/gh_issue close`)
