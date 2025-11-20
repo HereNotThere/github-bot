@@ -45,9 +45,10 @@ export class EventProcessor {
       `Processing PR event: ${event.action} - ${repository.full_name}#${pull_request.number}`
     );
 
-    // Get subscribed channels for this repo
+    // Get subscribed channels for this repo (webhook mode only)
     const channels = await this.subscriptionService.getRepoSubscribers(
-      repository.full_name
+      repository.full_name,
+      "webhook"
     );
 
     // Filter by event preferences (pr event type)
@@ -90,9 +91,10 @@ export class EventProcessor {
       `Processing push event: ${repository.full_name} - ${ref} (${commits?.length || 0} commits)`
     );
 
-    // Get subscribed channels for this repo
+    // Get subscribed channels for this repo (webhook mode only)
     const channels = await this.subscriptionService.getRepoSubscribers(
-      repository.full_name
+      repository.full_name,
+      "webhook"
     );
 
     // Filter by event preferences (commits event type)
@@ -133,9 +135,10 @@ export class EventProcessor {
       `Processing issue event: ${event.action} - ${repository.full_name}#${issue.number}`
     );
 
-    // Get subscribed channels for this repo
+    // Get subscribed channels for this repo (webhook mode only)
     const channels = await this.subscriptionService.getRepoSubscribers(
-      repository.full_name
+      repository.full_name,
+      "webhook"
     );
 
     // Filter by event preferences (issues event type)
@@ -178,9 +181,10 @@ export class EventProcessor {
       `Processing release event: ${event.action} - ${repository.full_name} ${release.tag_name}`
     );
 
-    // Get subscribed channels for this repo
+    // Get subscribed channels for this repo (webhook mode only)
     const channels = await this.subscriptionService.getRepoSubscribers(
-      repository.full_name
+      repository.full_name,
+      "webhook"
     );
 
     // Filter by event preferences (releases event type)
@@ -223,9 +227,10 @@ export class EventProcessor {
       `Processing workflow run event: ${event.action} - ${repository.full_name} ${workflow_run.name}`
     );
 
-    // Get subscribed channels for this repo
+    // Get subscribed channels for this repo (webhook mode only)
     const channels = await this.subscriptionService.getRepoSubscribers(
-      repository.full_name
+      repository.full_name,
+      "webhook"
     );
 
     // Filter by event preferences (ci event type)
@@ -268,9 +273,10 @@ export class EventProcessor {
       `Processing issue comment event: ${event.action} - ${repository.full_name}#${issue.number}`
     );
 
-    // Get subscribed channels for this repo
+    // Get subscribed channels for this repo (webhook mode only)
     const channels = await this.subscriptionService.getRepoSubscribers(
-      repository.full_name
+      repository.full_name,
+      "webhook"
     );
 
     // Filter by event preferences (comments event type)
@@ -313,9 +319,10 @@ export class EventProcessor {
       `Processing PR review event: ${event.action} - ${repository.full_name}#${pull_request.number}`
     );
 
-    // Get subscribed channels for this repo
+    // Get subscribed channels for this repo (webhook mode only)
     const channels = await this.subscriptionService.getRepoSubscribers(
-      repository.full_name
+      repository.full_name,
+      "webhook"
     );
 
     // Filter by event preferences (reviews event type)
@@ -359,9 +366,10 @@ export class EventProcessor {
 
     console.log(`Processing ${eventType} event: ${repository.full_name}`);
 
-    // Get subscribed channels for this repo
+    // Get subscribed channels for this repo (webhook mode only)
     const channels = await this.subscriptionService.getRepoSubscribers(
-      repository.full_name
+      repository.full_name,
+      "webhook"
     );
 
     // Filter by event preferences (branches event type)

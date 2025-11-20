@@ -77,7 +77,7 @@ export class SubscriptionService {
         channelId,
         spaceId,
         "subscribe",
-        { repo: repoIdentifier }
+        { repo: repoIdentifier, eventTypes }
       );
 
       return {
@@ -263,17 +263,28 @@ export class SubscriptionService {
   /**
    * Get all channels subscribed to a repository
    * Used by polling service and event processor
+   *
+   * @param repoFullName - Repository in owner/repo format
+   * @param deliveryMode - Optional filter by delivery mode (webhook/polling)
+   *                       Used to prevent duplicate notifications
    */
   async getRepoSubscribers(
-    repoFullName: string
+    repoFullName: string,
+    deliveryMode?: "webhook" | "polling"
   ): Promise<Array<{ channelId: string; eventTypes: string }>> {
+    const conditions = [eq(githubSubscriptions.repoFullName, repoFullName)];
+
+    if (deliveryMode) {
+      conditions.push(eq(githubSubscriptions.deliveryMode, deliveryMode));
+    }
+
     const results = await db
       .select({
         channelId: githubSubscriptions.channelId,
         eventTypes: githubSubscriptions.eventTypes,
       })
       .from(githubSubscriptions)
-      .where(eq(githubSubscriptions.repoFullName, repoFullName));
+      .where(and(...conditions));
 
     return results.map(r => ({
       channelId: r.channelId,
@@ -283,7 +294,7 @@ export class SubscriptionService {
 
   /**
    * Get all unique repositories with at least one subscriber
-   * Used by polling service
+   * Used by health endpoint for reporting subscribed repos
    */
   async getAllSubscribedRepos(): Promise<string[]> {
     const results = await db

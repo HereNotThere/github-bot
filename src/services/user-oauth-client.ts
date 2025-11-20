@@ -66,12 +66,8 @@ export class UserOAuthClient {
         },
       };
     } catch (error) {
-      if (
-        error &&
-        typeof error === "object" &&
-        "status" in error &&
-        (error.status === 404 || error.status === 403)
-      ) {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      if ((error as any)?.status === 404 || (error as any)?.status === 403) {
         throw new Error(
           `Repository not found or you don't have access: ${owner}/${repo}`
         );
@@ -98,12 +94,8 @@ export class UserOAuthClient {
         role: data.role as "admin" | "member",
       };
     } catch (error) {
-      if (
-        error &&
-        typeof error === "object" &&
-        "status" in error &&
-        (error.status === 404 || error.status === 403)
-      ) {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      if ((error as any)?.status === 404 || (error as any)?.status === 403) {
         return { role: null }; // Not a member
       }
       throw error;

@@ -37,7 +37,10 @@ export async function handleOAuthCallback(
 
     // If there was a redirect action (e.g., subscribe), complete the subscription
     if (result.redirectAction === "subscribe" && result.redirectData) {
-      const data = result.redirectData as { repo?: string };
+      const data = result.redirectData as {
+        repo?: string;
+        eventTypes?: string;
+      };
       if (data.repo && result.spaceId && result.townsUserId) {
         // Attempt subscription now that OAuth is complete
         const subResult = await subscriptionService.subscribeToRepository({
@@ -45,7 +48,7 @@ export async function handleOAuthCallback(
           spaceId: result.spaceId,
           channelId: result.channelId,
           repoIdentifier: data.repo,
-          eventTypes: DEFAULT_EVENT_TYPES,
+          eventTypes: data.eventTypes || DEFAULT_EVENT_TYPES,
         });
 
         if (subResult.success && subResult.repoFullName) {
@@ -117,7 +120,7 @@ function renderSuccess(c: Context) {
 /**
  * Render error page with HTML-escaped message
  */
-function renderError(c: Context, message: string, status: number) {
+function renderError(c: Context, message: string, status: 400 | 500) {
   const safeMessage = escapeHtml(message);
 
   return c.html(
@@ -135,6 +138,6 @@ function renderError(c: Context, message: string, status: number) {
       </body>
     </html>
     `,
-    status as any
+    status
   );
 }

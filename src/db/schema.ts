@@ -85,6 +85,8 @@ export const githubSubscriptions = pgTable(
       () => githubInstallations.installationId,
       { onDelete: "set null" }
     ),
+    // Note: 'enabled' is reserved for future soft-delete functionality
+    // Currently always true - not used for filtering subscriptions
     enabled: boolean("enabled").notNull().default(true),
     eventTypes: text("event_types").notNull().default(DEFAULT_EVENT_TYPES), // Comma-separated event types
     createdAt: timestamp("created_at", { withTimezone: true }).notNull(),

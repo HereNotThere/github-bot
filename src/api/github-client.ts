@@ -201,9 +201,10 @@ export async function fetchRepoEvents(
     const newEtag = response.headers.etag || "";
 
     return { events, etag: newEtag };
-  } catch (error: any) {
+  } catch (error: unknown) {
     // 304 Not Modified - no changes since last poll
-    if (error.status === 304) {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    if ((error as any)?.status === 304) {
       return { notModified: true };
     }
     throw error;

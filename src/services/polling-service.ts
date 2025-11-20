@@ -252,8 +252,11 @@ export class PollingService {
     );
 
     if (newEvents.length > 0) {
-      // Get all channels subscribed to this repo
-      const channels = await this.subscriptionService.getRepoSubscribers(repo);
+      // Get all channels subscribed to this repo (polling mode only)
+      const channels = await this.subscriptionService.getRepoSubscribers(
+        repo,
+        "polling"
+      );
 
       // Process events in chronological order (oldest first)
       const eventsToSend = newEvents.reverse();
