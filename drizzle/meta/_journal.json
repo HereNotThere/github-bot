@@ -8,7 +8,13 @@
       "when": 1763577600000,
       "tag": "0000_postgres_init",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1763577601000,
+      "tag": "0001_add_constraints",
+      "breakpoints": true
     }
   ]
 }
-

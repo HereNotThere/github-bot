@@ -117,19 +117,31 @@ Receive real-time notifications for:
    DATABASE_SSL=false
    ```
 
-4. **Run the bot locally**
+4. **Database migrations** (automatic on startup)
+
+   Migrations run automatically when the bot starts. The database schema is created on first run.
+
+   Manual migration commands (if needed):
+
+   ```bash
+   bun run db:generate   # Generate new migrations from schema changes
+   bun run db:migrate    # Run pending migrations
+   bun run db:push       # Push schema directly (dev only)
+   ```
+
+5. **Run the bot locally**
 
    ```bash
    bun run dev
    ```
 
-5. **Expose webhook with ngrok** (for testing)
+6. **Expose webhook with ngrok** (for testing)
 
    ```bash
    ngrok http 5123
    ```
 
-6. **Update webhook URL in Developer Portal**
+7. **Update webhook URL in Developer Portal**
    - Set to: `https://your-ngrok-url.ngrok-free.app/webhook`
 
 ## Environment Variables
