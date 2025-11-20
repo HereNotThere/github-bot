@@ -168,6 +168,11 @@ app.use(logger());
 // Towns webhook endpoint
 app.post("/webhook", jwtMiddleware, handler);
 
+// Agent metadata endpoint
+app.get("/.well-known/agent-metadata.json", async c => {
+  return c.json(await bot.getIdentityMetadata());
+});
+
 // OAuth callback endpoint
 app.get("/oauth/callback", c =>
   handleOAuthCallback(c, oauthService, subscriptionService, bot)
