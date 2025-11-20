@@ -16,21 +16,30 @@ import { DEFAULT_EVENT_TYPES } from "../constants/event-types";
 /**
  * Stores OAuth tokens for GitHub users linked to Towns users
  */
-export const githubUserTokens = pgTable("github_user_tokens", {
-  townsUserId: text("towns_user_id").primaryKey(),
-  githubUserId: integer("github_user_id").notNull(),
-  githubLogin: text("github_login").notNull(),
-  accessToken: text("access_token").notNull(), // Encrypted
-  tokenType: text("token_type").notNull(),
-  scope: text("scope"),
-  expiresAt: timestamp("expires_at", { withTimezone: true }),
-  refreshToken: text("refresh_token"),
-  refreshTokenExpiresAt: timestamp("refresh_token_expires_at", {
-    withTimezone: true,
-  }),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
-});
+export const githubUserTokens = pgTable(
+  "github_user_tokens",
+  {
+    townsUserId: text("towns_user_id").primaryKey(),
+    githubUserId: integer("github_user_id").notNull(),
+    githubLogin: text("github_login").notNull(),
+    accessToken: text("access_token").notNull(), // Encrypted
+    tokenType: text("token_type").notNull(),
+    scope: text("scope"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    refreshToken: text("refresh_token"),
+    refreshTokenExpiresAt: timestamp("refresh_token_expires_at", {
+      withTimezone: true,
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+  },
+  table => ({
+    // Enforce 1:1 mapping between GitHub accounts and Towns users
+    githubUserIdUnique: uniqueIndex(
+      "github_user_tokens_github_user_id_unique"
+    ).on(table.githubUserId),
+  })
+);
 
 /**
  * Stores OAuth state parameters for security during OAuth flow
@@ -49,6 +58,9 @@ export const oauthStates = pgTable(
   },
   table => ({
     expiresIndex: index("idx_oauth_states_expires").on(table.expiresAt),
+    townsUserIndex: index("idx_oauth_states_towns_user_id").on(
+      table.townsUserId
+    ),
   })
 );
 
