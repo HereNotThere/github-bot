@@ -1,17 +1,16 @@
-import type { BotHandler } from "@towns-protocol/bot";
+import type { BotHandler, BotEvents } from "@towns-protocol/bot";
 import { stripMarkdown } from "../utils/stripper";
 import {
   ALLOWED_EVENT_TYPES,
   DEFAULT_EVENT_TYPES,
 } from "../constants/event-types";
 import type { SubscriptionService } from "../services/subscription-service";
+import type commands from "../commands";
 
-interface GithubSubscriptionEvent {
-  channelId: string;
-  spaceId: string;
-  userId: string;
-  args: string[];
-}
+// Infer slash command event type from SDK
+type SlashCommandEvent = Parameters<
+  BotEvents<typeof commands>["slashCommand"]
+>[1];
 
 /**
  * Parse and validate event types from --events flag
@@ -80,7 +79,7 @@ function formatEventTypes(eventTypes: string): string {
 
 export async function handleGithubSubscription(
   handler: BotHandler,
-  event: GithubSubscriptionEvent,
+  event: SlashCommandEvent,
   subscriptionService: SubscriptionService
 ): Promise<void> {
   const { channelId, spaceId, userId, args } = event;
