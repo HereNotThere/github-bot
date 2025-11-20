@@ -113,14 +113,22 @@ export class InstallationService {
 
       // Upgrade existing polling subscriptions to webhook mode
       if (this.subscriptionService) {
-        const upgraded = await this.subscriptionService.upgradeToWebhook(
-          repo.full_name,
-          installation.id
-        );
-        if (upgraded > 0) {
-          console.log(
-            `Upgraded ${upgraded} subscription(s) for ${repo.full_name} to webhook delivery`
+        try {
+          const upgraded = await this.subscriptionService.upgradeToWebhook(
+            repo.full_name,
+            installation.id
           );
+          if (upgraded > 0) {
+            console.log(
+              `Upgraded ${upgraded} subscription(s) for ${repo.full_name} to webhook delivery`
+            );
+          }
+        } catch (error) {
+          console.error(
+            `Failed to upgrade subscriptions for ${repo.full_name} (installation ${installation.id}):`,
+            error
+          );
+          // Continue processing other repos
         }
       }
     }
