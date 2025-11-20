@@ -1,11 +1,15 @@
+import { eq } from "drizzle-orm";
 import {
   fetchRepoEvents,
   getPullRequest,
   type GitHubPullRequest,
 } from "../api/github-client";
-import { dbService } from "../db";
-import { validateGitHubEvent } from "../types/events-api";
+import { db } from "../db";
+import { repoPollingState } from "../db/schema";
 import { formatEvent } from "../formatters/events-api";
+import type { TownsBot } from "../types/bot";
+import { validateGitHubEvent } from "../types/events-api";
+import type { SubscriptionService } from "./subscription-service";
 
 /**
  * Map short event type names to GitHub event types
@@ -57,19 +61,77 @@ function isEventTypeMatch(
 export class PollingService {
   private intervalId: ReturnType<typeof setInterval> | null = null;
   private isPolling = false;
-  private sendMessageFn:
-    | ((channelId: string, message: string) => Promise<void>)
-    | null = null;
 
-  constructor(private pollIntervalMs: number = 5 * 60 * 1000) {}
+  constructor(
+    private bot: TownsBot,
+    private subscriptionService: SubscriptionService,
+    private pollIntervalMs: number = 5 * 60 * 1000
+  ) {}
 
   /**
-   * Set the function used to send messages to Towns channels
+   * Get polling state for a repository
    */
-  setSendMessageFunction(
-    fn: (channelId: string, message: string) => Promise<void>
-  ): void {
-    this.sendMessageFn = fn;
+  private async getPollingState(repo: string): Promise<{
+    etag?: string;
+    lastEventId?: string;
+    lastPolledAt?: Date;
+  } | null> {
+    const results = await db
+      .select()
+      .from(repoPollingState)
+      .where(eq(repoPollingState.repo, repo))
+      .limit(1);
+
+    if (results.length === 0) {
+      return null;
+    }
+
+    const state = results[0];
+    return {
+      etag: state.etag ?? undefined,
+      lastEventId: state.lastEventId ?? undefined,
+      lastPolledAt: state.lastPolledAt ?? undefined,
+    };
+  }
+
+  /**
+   * Update polling state for a repository
+   */
+  private async updatePollingState(
+    repo: string,
+    state: {
+      etag?: string;
+      lastEventId?: string;
+      lastPolledAt?: Date;
+    }
+  ): Promise<void> {
+    const existing = await db
+      .select()
+      .from(repoPollingState)
+      .where(eq(repoPollingState.repo, repo))
+      .limit(1);
+
+    if (existing.length === 0) {
+      // Insert new state
+      await db.insert(repoPollingState).values({
+        repo,
+        etag: state.etag ?? null,
+        lastEventId: state.lastEventId ?? null,
+        lastPolledAt: state.lastPolledAt ?? null,
+        updatedAt: new Date(),
+      });
+    } else {
+      // Update existing state
+      await db
+        .update(repoPollingState)
+        .set({
+          etag: state.etag ?? existing[0].etag,
+          lastEventId: state.lastEventId ?? existing[0].lastEventId,
+          lastPolledAt: state.lastPolledAt ?? existing[0].lastPolledAt,
+          updatedAt: new Date(),
+        })
+        .where(eq(repoPollingState.repo, repo));
+    }
   }
 
   /**
@@ -114,15 +176,10 @@ export class PollingService {
       return;
     }
 
-    if (!this.sendMessageFn) {
-      console.error("Send message function not set, cannot poll");
-      return;
-    }
-
     this.isPolling = true;
 
     try {
-      const repos = await dbService.getAllSubscribedRepos();
+      const repos = await this.subscriptionService.getPollingRepos();
 
       if (repos.length === 0) {
         console.log("No subscribed repos to poll");
@@ -149,38 +206,11 @@ export class PollingService {
   }
 
   /**
-   * Check if a repository should use polling mode
-   * (Skip polling if GitHub App is installed for the repo)
-   */
-  private shouldPollRepo(repo: string): Promise<boolean> {
-    return this.checkIfRepoNeedsPolling
-      ? this.checkIfRepoNeedsPolling(repo)
-      : Promise.resolve(true);
-  }
-
-  private checkIfRepoNeedsPolling: ((repo: string) => Promise<boolean>) | null =
-    null;
-
-  /**
-   * Set the function to check if a repo needs polling
-   * (Used for dual-mode: skip if GitHub App installed)
-   */
-  setCheckIfRepoNeedsPolling(fn: (repo: string) => Promise<boolean>): void {
-    this.checkIfRepoNeedsPolling = fn;
-  }
-
-  /**
    * Poll a single repository for new events
    */
   private async pollRepo(repo: string): Promise<void> {
-    // Dual-mode check: Skip if GitHub App handles this repo
-    if (!(await this.shouldPollRepo(repo))) {
-      console.log(`${repo}: Skipping polling (GitHub App webhook mode)`);
-      return;
-    }
-
     // Get polling state (ETag and last seen event ID)
-    const state = await dbService.getPollingState(repo);
+    const state = await this.getPollingState(repo);
     const etag = state?.etag;
     const lastEventId = state?.lastEventId;
 
@@ -190,7 +220,7 @@ export class PollingService {
     // 304 Not Modified - no new events
     if (result.notModified) {
       console.log(`${repo}: No changes (304 Not Modified)`);
-      await dbService.updatePollingState(repo, {
+      await this.updatePollingState(repo, {
         lastPolledAt: new Date(),
       });
       return;
@@ -200,7 +230,7 @@ export class PollingService {
 
     if (events.length === 0) {
       console.log(`${repo}: No events returned`);
-      await dbService.updatePollingState(repo, {
+      await this.updatePollingState(repo, {
         etag: newEtag,
         lastPolledAt: new Date(),
       });
@@ -223,8 +253,7 @@ export class PollingService {
 
     if (newEvents.length > 0) {
       // Get all channels subscribed to this repo
-      const channels: Array<{ channelId: string; eventTypes: string | null }> =
-        await dbService.getRepoSubscribers(repo);
+      const channels = await this.subscriptionService.getRepoSubscribers(repo);
 
       // Process events in chronological order (oldest first)
       const eventsToSend = newEvents.reverse();
@@ -286,7 +315,7 @@ export class PollingService {
           // Send to filtered channels in parallel
           // Use Promise.allSettled to attempt all channels independently
           const sendPromises = channelsForEvent.map(({ channelId }) =>
-            this.sendMessageFn!(channelId, message).then(
+            this.bot.sendMessage(channelId, message).then(
               () => ({ status: "fulfilled" as const, channelId }),
               error => ({ status: "rejected" as const, channelId, error })
             )
@@ -309,19 +338,17 @@ export class PollingService {
       }
 
       // Update polling state with new ETag and last seen event ID
-      await dbService.updatePollingState(repo, {
+      await this.updatePollingState(repo, {
         etag: newEtag,
         lastEventId: events[0].id, // Most recent event ID
         lastPolledAt: new Date(),
       });
     } else {
       // No new events, just update ETag and timestamp
-      await dbService.updatePollingState(repo, {
+      await this.updatePollingState(repo, {
         etag: newEtag,
         lastPolledAt: new Date(),
       });
     }
   }
 }
-
-export const pollingService = new PollingService();

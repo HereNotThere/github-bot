@@ -29,12 +29,12 @@ export interface UserProfile {
 }
 
 /**
- * GitHubClientService - OAuth-authenticated GitHub API calls
+ * UserOAuthClient - User OAuth-authenticated GitHub API calls
  *
  * Provides methods for validating repositories, checking permissions,
  * and getting user profile data using user OAuth tokens.
  */
-export class GitHubClientService {
+export class UserOAuthClient {
   /**
    * Validate repository and get metadata using user's OAuth token
    * @param token - User's GitHub OAuth access token

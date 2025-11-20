@@ -105,10 +105,6 @@ export const githubSubscriptions = pgTable(
   })
 );
 
-// Temporary alias for backward compatibility with DatabaseService
-// TODO: Remove after SubscriptionService is implemented and DatabaseService is deleted
-export const subscriptions = githubSubscriptions;
-
 /**
  * Stores polling state for each subscribed repository
  * Tracks ETags and last seen event IDs for efficient polling

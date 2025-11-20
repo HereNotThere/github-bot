@@ -1,14 +1,15 @@
 import type { BotHandler } from "@towns-protocol/bot";
-import { validateRepo } from "../api/github-client";
 import { stripMarkdown } from "../utils/stripper";
-import { dbService } from "../db";
 import {
   ALLOWED_EVENT_TYPES,
   DEFAULT_EVENT_TYPES,
 } from "../constants/event-types";
+import type { SubscriptionService } from "../services/subscription-service";
 
 interface GithubSubscriptionEvent {
   channelId: string;
+  spaceId: string;
+  userId: string;
   args: string[];
 }
 
@@ -79,9 +80,10 @@ function formatEventTypes(eventTypes: string): string {
 
 export async function handleGithubSubscription(
   handler: BotHandler,
-  event: GithubSubscriptionEvent
+  event: GithubSubscriptionEvent,
+  subscriptionService: SubscriptionService
 ): Promise<void> {
-  const { channelId, args } = event;
+  const { channelId, spaceId, userId, args } = event;
   const [action, repoArg] = args;
 
   if (!action) {
@@ -128,62 +130,73 @@ export async function handleGithubSubscription(
         return;
       }
 
-      // Check if already subscribed
-      const isAlreadySubscribed = await dbService.isSubscribed(channelId, repo);
-      if (isAlreadySubscribed) {
+      // Use SubscriptionService for OAuth-first subscription flow
+      const result = await subscriptionService.subscribeToRepository({
+        townsUserId: userId,
+        spaceId,
+        channelId,
+        repoIdentifier: repo,
+        eventTypes,
+      });
+
+      // Handle OAuth requirement
+      if (result.requiresOAuth && result.authUrl) {
         await handler.sendMessage(
           channelId,
-          `ℹ️ Already subscribed to **${repo}**`
+          `🔐 **GitHub Account Required**\n\n` +
+            `To subscribe to repositories, you need to connect your GitHub account.\n\n` +
+            `[Connect GitHub Account](${result.authUrl})`
         );
         return;
       }
 
-      // Validate repo exists
-      const isValid = await validateRepo(repo);
-      if (!isValid) {
+      // Handle installation requirement (private repos)
+      if (result.requiresInstallation && result.installUrl) {
         await handler.sendMessage(
           channelId,
-          `❌ Repository **${repo}** not found or is not public`
+          `🔒 **GitHub App Installation Required**\n\n` +
+            `This private repository requires the GitHub App to be installed.\n\n` +
+            `${result.error || "Install the app to subscribe to this repository."}\n\n` +
+            `[Install GitHub App](${result.installUrl})`
         );
         return;
       }
 
-      // Store subscription in database with event types
-      await dbService.subscribe(channelId, repo, eventTypes);
+      // Handle error
+      if (!result.success) {
+        await handler.sendMessage(
+          channelId,
+          `❌ ${result.error || "Subscription failed"}`
+        );
+        return;
+      }
 
+      // Success - format response
       const eventTypeDisplay = formatEventTypes(eventTypes);
+      let deliveryInfo = "";
 
-      // Check GitHub App installation status (if available)
-      const { InstallationService } = await import(
-        "../github-app/installation-service"
-      );
-      const { GitHubApp } = await import("../github-app/app");
+      if (result.deliveryMode === "webhook") {
+        deliveryInfo = "⚡ Real-time webhook delivery enabled!";
+      } else {
+        deliveryInfo = "⏱️ Events are checked every 5 minutes (polling mode)";
 
-      const githubApp = new GitHubApp();
-      let deliveryInfo = "⏱️ Events are checked every 5 minutes (polling mode)";
-
-      if (githubApp.isEnabled()) {
-        // Check if repo has GitHub App installed
-        const installationService = new InstallationService(null); // bot not needed for checking
-        const installationId = await installationService.isRepoInstalled(repo);
-
-        if (installationId) {
-          deliveryInfo = "⚡ Real-time webhook delivery enabled!";
-        } else {
-          // GitHub App available but not installed for this repo
-          deliveryInfo =
-            "⏱️ Events are checked every 5 minutes (polling mode)\n\n" +
-            `💡 **Want real-time notifications?** Install the GitHub App:\n` +
-            `   https://github.com/apps/${process.env.GITHUB_APP_SLUG || "towns-github-bot"}/installations/new`;
+        // Add installation suggestion for public repos
+        if (result.suggestInstall && result.installUrl) {
+          const adminHint = result.isAdmin
+            ? "You can install the GitHub App for real-time delivery:"
+            : "Ask an admin to install the GitHub App for real-time delivery:";
+          deliveryInfo +=
+            `\n\n💡 **Want real-time notifications?** ${adminHint}\n` +
+            `   [Install GitHub App](${result.installUrl})`;
         }
       }
 
       await handler.sendMessage(
         channelId,
-        `✅ **Subscribed to ${repo}**\n\n` +
+        `✅ **Subscribed to ${result.repoFullName}**\n\n` +
           `📡 Event types: **${eventTypeDisplay}**\n` +
           `${deliveryInfo}\n\n` +
-          `🔗 ${`https://github.com/${repo}`}`
+          `🔗 https://github.com/${result.repoFullName}`
       );
       break;
     }
@@ -210,7 +223,10 @@ export async function handleGithubSubscription(
       }
 
       // Check if channel has any subscriptions
-      const channelRepos = await dbService.getChannelSubscriptions(channelId);
+      const channelRepos = await subscriptionService.getChannelSubscriptions(
+        channelId,
+        spaceId
+      );
       if (channelRepos.length === 0) {
         await handler.sendMessage(
           channelId,
@@ -229,7 +245,11 @@ export async function handleGithubSubscription(
       }
 
       // Remove subscription
-      const success = await dbService.unsubscribe(channelId, repo);
+      const success = await subscriptionService.unsubscribe(
+        channelId,
+        spaceId,
+        repo
+      );
 
       if (success) {
         await handler.sendMessage(
@@ -246,7 +266,10 @@ export async function handleGithubSubscription(
     }
 
     case "status": {
-      const subscriptions = await dbService.getChannelSubscriptions(channelId);
+      const subscriptions = await subscriptionService.getChannelSubscriptions(
+        channelId,
+        spaceId
+      );
       if (subscriptions.length === 0) {
         await handler.sendMessage(
           channelId,
@@ -256,13 +279,16 @@ export async function handleGithubSubscription(
       }
 
       const repoList = subscriptions
-        .map(sub => `• ${sub.repo} (${formatEventTypes(sub.eventTypes)})`)
+        .map(sub => {
+          const mode = sub.deliveryMode === "webhook" ? "⚡" : "⏱️";
+          return `${mode} ${sub.repo} (${formatEventTypes(sub.eventTypes)})`;
+        })
         .join("\n");
 
       await handler.sendMessage(
         channelId,
         `📬 **Subscribed Repositories (${subscriptions.length}):**\n\n${repoList}\n\n` +
-          `⏱️ Checking for events every 5 minutes`
+          `⚡ Real-time  ⏱️ Polling (5 min)`
       );
       break;
     }

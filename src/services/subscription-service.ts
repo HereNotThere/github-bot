@@ -2,10 +2,7 @@ import { db } from "../db";
 import { githubSubscriptions } from "../db/schema";
 import { eq, and } from "drizzle-orm";
 import { GitHubOAuthService } from "./github-oauth-service";
-import {
-  GitHubClientService,
-  type RepositoryInfo,
-} from "./github-client-service";
+import { UserOAuthClient, type RepositoryInfo } from "./user-oauth-client";
 import { InstallationService } from "../github-app/installation-service";
 import { DEFAULT_EVENT_TYPES } from "../constants/event-types";
 
@@ -49,7 +46,7 @@ export interface SubscribeResult {
 export class SubscriptionService {
   constructor(
     private oauthService: GitHubOAuthService,
-    private githubClient: GitHubClientService,
+    private userClient: UserOAuthClient,
     private installationService: InstallationService
   ) {}
 
@@ -91,12 +88,12 @@ export class SubscriptionService {
     }
 
     // Get user's GitHub login for tracking
-    const githubUser = await this.githubClient.getUserProfile(githubToken);
+    const githubUser = await this.userClient.getUserProfile(githubToken);
 
     // 2. Validate repo with OAuth token
     let repoInfo: RepositoryInfo;
     try {
-      repoInfo = await this.githubClient.validateRepository(
+      repoInfo = await this.userClient.validateRepository(
         githubToken,
         owner,
         repo
@@ -153,7 +150,7 @@ export class SubscriptionService {
           isUserAdmin = repoInfo.owner.login === githubUser.login;
         } else {
           // Org repo - check membership
-          const membership = await this.githubClient.checkOrgMembership(
+          const membership = await this.userClient.checkOrgMembership(
             githubToken,
             repoInfo.owner.login
           );
@@ -292,6 +289,19 @@ export class SubscriptionService {
     const results = await db
       .selectDistinct({ repo: githubSubscriptions.repoFullName })
       .from(githubSubscriptions);
+
+    return results.map(r => r.repo);
+  }
+
+  /**
+   * Get all unique repositories that use polling mode
+   * Used by polling service to avoid polling repos with webhooks
+   */
+  async getPollingRepos(): Promise<string[]> {
+    const results = await db
+      .selectDistinct({ repo: githubSubscriptions.repoFullName })
+      .from(githubSubscriptions)
+      .where(eq(githubSubscriptions.deliveryMode, "polling"));
 
     return results.map(r => r.repo);
   }

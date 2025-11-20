@@ -1,17 +1,21 @@
 import type { Context } from "hono";
 import type { GitHubOAuthService } from "../services/github-oauth-service";
+import type { SubscriptionService } from "../services/subscription-service";
 import type { TownsBot } from "../types/bot";
 import { escapeHtml } from "../utils/html-escape";
+import { DEFAULT_EVENT_TYPES } from "../constants/event-types";
 
 /**
  * OAuth callback route handler
  *
  * Handles the GitHub OAuth callback after user authorizes the app.
  * Exchanges the authorization code for an access token and stores it.
+ * If the user was redirected from a subscription attempt, completes the subscription.
  */
 export async function handleOAuthCallback(
   c: Context,
   oauthService: GitHubOAuthService,
+  subscriptionService: SubscriptionService,
   bot: TownsBot
 ) {
   const code = c.req.query("code");
@@ -31,14 +35,52 @@ export async function handleOAuthCallback(
       `✅ GitHub account @${result.githubLogin} connected successfully!`
     );
 
-    // If there was a redirect action (e.g., subscribe), notify user
+    // If there was a redirect action (e.g., subscribe), complete the subscription
     if (result.redirectAction === "subscribe" && result.redirectData) {
       const data = result.redirectData as { repo?: string };
-      if (data.repo) {
-        await bot.sendMessage(
-          result.channelId,
-          `You can now run \`/github subscribe ${data.repo}\``
-        );
+      if (data.repo && result.spaceId && result.townsUserId) {
+        // Attempt subscription now that OAuth is complete
+        const subResult = await subscriptionService.subscribeToRepository({
+          townsUserId: result.townsUserId,
+          spaceId: result.spaceId,
+          channelId: result.channelId,
+          repoIdentifier: data.repo,
+          eventTypes: DEFAULT_EVENT_TYPES,
+        });
+
+        if (subResult.success && subResult.repoFullName) {
+          // Success
+          let deliveryInfo =
+            subResult.deliveryMode === "webhook"
+              ? "⚡ Real-time webhook delivery enabled!"
+              : "⏱️ Events checked every 5 minutes";
+
+          if (subResult.suggestInstall && subResult.installUrl) {
+            const adminHint = subResult.isAdmin
+              ? "Install the GitHub App for real-time delivery:"
+              : "Ask an admin to install the GitHub App:";
+            deliveryInfo += `\n\n💡 ${adminHint}\n[Install](<${subResult.installUrl}>)`;
+          }
+
+          await bot.sendMessage(
+            result.channelId,
+            `✅ **Subscribed to ${subResult.repoFullName}**\n\n${deliveryInfo}`
+          );
+        } else if (subResult.requiresInstallation && subResult.installUrl) {
+          // Private repo - needs installation
+          await bot.sendMessage(
+            result.channelId,
+            `🔒 **Installation Required**\n\n` +
+              `This private repository requires the GitHub App.\n\n` +
+              `[Install GitHub App](<${subResult.installUrl}>)`
+          );
+        } else {
+          // Other error
+          await bot.sendMessage(
+            result.channelId,
+            `❌ ${subResult.error || "Failed to subscribe to repository"}`
+          );
+        }
       }
     }
 

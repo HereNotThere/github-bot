@@ -1,29 +1,23 @@
-import { db, dbService } from "../db";
+import { db } from "../db";
 import { githubInstallations, installationRepositories } from "../db/schema";
 import { eq, and } from "drizzle-orm";
 import type {
   InstallationPayload,
   InstallationRepositoriesPayload,
 } from "../types/webhooks";
-import type { TownsBot } from "../types/bot";
 
 /**
  * InstallationService - Manages GitHub App installation lifecycle
  *
  * Handles installation created/deleted events and repository changes.
  * Stores installation data in normalized tables (no JSON columns).
+ * Does not send notifications - behavior changes are transparent to users.
  */
 export class InstallationService {
-  private bot: TownsBot | null;
-
-  constructor(bot: TownsBot | null) {
-    this.bot = bot;
-  }
-
   /**
    * Handle GitHub App installation created event
    */
-  async handleInstallationCreated(event: InstallationPayload) {
+  async onInstallationCreated(event: InstallationPayload) {
     const { installation, repositories } = event;
 
     // Get account info with proper type checking
@@ -58,26 +52,12 @@ export class InstallationService {
         });
       }
     }
-
-    // Notify subscribed channels about new installation
-    if (this.bot && repositories) {
-      for (const repo of repositories) {
-        if (!repo.full_name) continue;
-        const channels = await dbService.getRepoSubscribers(repo.full_name);
-        for (const channel of channels) {
-          await this.bot.sendMessage(
-            channel.channelId,
-            `✅ GitHub App installed for ${repo.full_name}! Switching to real-time webhook delivery.`
-          );
-        }
-      }
-    }
   }
 
   /**
    * Handle GitHub App installation deleted event
    */
-  async handleInstallationDeleted(event: InstallationPayload) {
+  async onInstallationDeleted(event: InstallationPayload) {
     const { installation } = event;
 
     // Get account info with proper type checking
@@ -88,32 +68,16 @@ export class InstallationService {
 
     console.log(`GitHub App uninstalled: ${accountLogin} (${installation.id})`);
 
-    // Get repos before deletion for notifications
-    const repos = await this.getInstallationRepos(installation.id);
-
     // Remove installation (foreign key CASCADE automatically deletes related repositories)
     await db
       .delete(githubInstallations)
       .where(eq(githubInstallations.installationId, installation.id));
-
-    // Notify channels
-    if (this.bot) {
-      for (const repo of repos) {
-        const channels = await dbService.getRepoSubscribers(repo);
-        for (const channel of channels) {
-          await this.bot.sendMessage(
-            channel.channelId,
-            `⚠️ GitHub App uninstalled for ${repo}. Falling back to polling mode.`
-          );
-        }
-      }
-    }
   }
 
   /**
    * Handle repositories added to installation
    */
-  async handleRepositoriesAdded(event: InstallationRepositoriesPayload) {
+  async onRepositoriesAdded(event: InstallationRepositoriesPayload) {
     const { installation, repositories_added } = event;
 
     console.log(
@@ -132,26 +96,12 @@ export class InstallationService {
         })
         .onConflictDoNothing();
     }
-
-    // Notify subscribed channels
-    if (this.bot) {
-      for (const repo of repositories_added) {
-        if (!repo.full_name) continue;
-        const channels = await dbService.getRepoSubscribers(repo.full_name);
-        for (const channel of channels) {
-          await this.bot.sendMessage(
-            channel.channelId,
-            `✅ GitHub App enabled for ${repo.full_name}! Switching to real-time webhook delivery.`
-          );
-        }
-      }
-    }
   }
 
   /**
    * Handle repositories removed from installation
    */
-  async handleRepositoriesRemoved(event: InstallationRepositoriesPayload) {
+  async onRepositoriesRemoved(event: InstallationRepositoriesPayload) {
     const { installation, repositories_removed } = event;
 
     console.log(
@@ -170,32 +120,6 @@ export class InstallationService {
           )
         );
     }
-
-    // Notify subscribed channels
-    if (this.bot) {
-      for (const repo of repositories_removed) {
-        if (!repo.full_name) continue;
-        const channels = await dbService.getRepoSubscribers(repo.full_name);
-        for (const channel of channels) {
-          await this.bot.sendMessage(
-            channel.channelId,
-            `⚠️ GitHub App disabled for ${repo.full_name}. Falling back to polling mode.`
-          );
-        }
-      }
-    }
-  }
-
-  /**
-   * Get all repositories for an installation
-   */
-  async getInstallationRepos(installationId: number): Promise<string[]> {
-    const repos = await db
-      .select()
-      .from(installationRepositories)
-      .where(eq(installationRepositories.installationId, installationId));
-
-    return repos.map(r => r.repoFullName);
   }
 
   /**
