@@ -64,7 +64,9 @@ describe("github subscription handler", () => {
       expect(validateRepoSpy).toHaveBeenCalledWith("owner/repo");
       expect(mockHandler.sendMessage).toHaveBeenCalledTimes(1);
       const message = mockHandler.sendMessage.mock.calls[0][1];
-      expect(message).toContain("✅ **Subscribed to [owner/repo](https://github.com/owner/repo)**");
+      expect(message).toContain(
+        "✅ **Subscribed to [owner/repo](https://github.com/owner/repo)**"
+      );
 
       validateRepoSpy.mockRestore();
       isSubscribedSpy.mockRestore();
@@ -207,7 +209,9 @@ describe("github subscription handler", () => {
       expect(mockHandler.sendMessage).toHaveBeenCalledTimes(1);
 
       const message = mockHandler.sendMessage.mock.calls[0][1];
-      expect(message).toContain("✅ **Subscribed to [facebook/react](https://github.com/facebook/react)**");
+      expect(message).toContain(
+        "✅ **Subscribed to [facebook/react](https://github.com/facebook/react)**"
+      );
       expect(message).toContain("pr, issues, commits, releases");
 
       validateRepoSpy.mockRestore();
