@@ -4,7 +4,7 @@ import { DEFAULT_EVENT_TYPES } from "../constants/event-types";
 import type { GitHubOAuthService } from "../services/github-oauth-service";
 import type { SubscriptionService } from "../services/subscription-service";
 import type { TownsBot } from "../types/bot";
-import { escapeHtml } from "../utils/html-escape";
+import { renderError, renderSuccess } from "../views/oauth-pages";
 
 /**
  * OAuth callback route handler
@@ -44,7 +44,7 @@ export async function handleOAuthCallback(
       };
       if (data.repo && result.spaceId && result.townsUserId) {
         // Attempt subscription now that OAuth is complete
-        const subResult = await subscriptionService.subscribeToRepository({
+        const subResult = await subscriptionService.createSubscription({
           townsUserId: result.townsUserId,
           spaceId: result.spaceId,
           channelId: result.channelId,
@@ -53,7 +53,7 @@ export async function handleOAuthCallback(
         });
 
         if (subResult.success && subResult.repoFullName) {
-          // Success
+          // Success - notify in Towns
           let deliveryInfo =
             subResult.deliveryMode === "webhook"
               ? "⚡ Real-time webhook delivery enabled!"
@@ -70,20 +70,29 @@ export async function handleOAuthCallback(
             result.channelId,
             `✅ **Subscribed to [${subResult.repoFullName}](https://github.com/${subResult.repoFullName})**\n\n${deliveryInfo}`
           );
+
+          // Return success page with subscription data
+          return renderSuccess(c, {
+            action: "subscribe",
+            subscriptionResult: subResult,
+          });
         } else if (subResult.requiresInstallation && subResult.installUrl) {
-          // Private repo - needs installation
-          await bot.sendMessage(
-            result.channelId,
-            `🔒 **Installation Required**\n\n` +
-              `This private repository requires the GitHub App.\n\n` +
-              `[Install GitHub App](<${subResult.installUrl}>)`
-          );
+          // Private repo - show installation page (no Towns message)
+          return renderSuccess(c, {
+            action: "subscribe",
+            subscriptionResult: subResult,
+          });
         } else {
-          // Other error
+          // Other error - notify in Towns
           await bot.sendMessage(
             result.channelId,
             `❌ ${subResult.error || "Failed to subscribe to repository"}`
           );
+
+          return renderSuccess(c, {
+            action: "subscribe",
+            subscriptionResult: subResult,
+          });
         }
       }
     }
@@ -95,50 +104,4 @@ export async function handleOAuthCallback(
     // Return generic error to user, keep details in server logs
     return renderError(c, "Authorization failed. Please try again.", 400);
   }
-}
-
-/**
- * Render success page after OAuth completion
- */
-function renderSuccess(c: Context) {
-  return c.html(`
-    <!DOCTYPE html>
-    <html>
-      <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>GitHub Connected</title>
-      </head>
-      <body>
-        <h1>Success!</h1>
-        <p>Your GitHub account has been connected.</p>
-        <p>You can close this window and return to Towns.</p>
-      </body>
-    </html>
-  `);
-}
-
-/**
- * Render error page with HTML-escaped message
- */
-function renderError(c: Context, message: string, status: 400 | 500) {
-  const safeMessage = escapeHtml(message);
-
-  return c.html(
-    `
-    <!DOCTYPE html>
-    <html>
-      <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>OAuth Error</title>
-      </head>
-      <body>
-        <h1>OAuth Error</h1>
-        <p>${safeMessage}</p>
-      </body>
-    </html>
-    `,
-    status
-  );
 }

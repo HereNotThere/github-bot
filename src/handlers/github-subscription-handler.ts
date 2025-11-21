@@ -4,6 +4,7 @@ import {
   ALLOWED_EVENT_TYPES,
   DEFAULT_EVENT_TYPES,
 } from "../constants/event-types";
+import type { GitHubOAuthService } from "../services/github-oauth-service";
 import type { SubscriptionService } from "../services/subscription-service";
 import type { SlashCommandEvent } from "../types/bot";
 import { stripMarkdown } from "../utils/stripper";
@@ -11,7 +12,8 @@ import { stripMarkdown } from "../utils/stripper";
 export async function handleGithubSubscription(
   handler: BotHandler,
   event: SlashCommandEvent,
-  subscriptionService: SubscriptionService
+  subscriptionService: SubscriptionService,
+  oauthService: GitHubOAuthService
 ): Promise<void> {
   const { channelId, args } = event;
   const [action, repoArg] = args;
@@ -29,7 +31,13 @@ export async function handleGithubSubscription(
 
   switch (action.toLowerCase()) {
     case "subscribe":
-      await handleSubscribe(handler, event, subscriptionService, repoArg);
+      await handleSubscribe(
+        handler,
+        event,
+        subscriptionService,
+        oauthService,
+        repoArg
+      );
       break;
     case "unsubscribe":
       await handleUnsubscribe(handler, event, subscriptionService, repoArg);
@@ -56,6 +64,7 @@ async function handleSubscribe(
   handler: BotHandler,
   event: SlashCommandEvent,
   subscriptionService: SubscriptionService,
+  oauthService: GitHubOAuthService,
   repoArg: string | undefined
 ): Promise<void> {
   const { channelId, spaceId, userId, args } = event;
@@ -91,26 +100,34 @@ async function handleSubscribe(
     return;
   }
 
-  // Use SubscriptionService for OAuth-first subscription flow
-  const result = await subscriptionService.subscribeToRepository({
+  // Check if user has linked their GitHub account
+  const isLinked = await oauthService.isLinked(userId);
+  if (!isLinked) {
+    const authUrl = await oauthService.getAuthorizationUrl(
+      userId,
+      channelId,
+      spaceId,
+      "subscribe",
+      { repo, eventTypes }
+    );
+    await handler.sendMessage(
+      channelId,
+      `🔐 **GitHub Account Required**\n\n` +
+        `To subscribe to repositories, you need to connect your GitHub account.\n\n` +
+        `[Connect GitHub Account](${authUrl})`,
+      { ephemeral: true }
+    );
+    return;
+  }
+
+  // Create subscription (OAuth check already done)
+  const result = await subscriptionService.createSubscription({
     townsUserId: userId,
     spaceId,
     channelId,
     repoIdentifier: repo,
     eventTypes,
   });
-
-  // Handle OAuth requirement
-  if (result.requiresOAuth && result.authUrl) {
-    await handler.sendMessage(
-      channelId,
-      `🔐 **GitHub Account Required**\n\n` +
-        `To subscribe to repositories, you need to connect your GitHub account.\n\n` +
-        `[Connect GitHub Account](${result.authUrl})`,
-      { ephemeral: true }
-    );
-    return;
-  }
 
   // Handle installation requirement (private repos)
   if (result.requiresInstallation && result.installUrl) {

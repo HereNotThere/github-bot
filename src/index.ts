@@ -152,7 +152,12 @@ bot.onSlashCommand("help", async (handler, { channelId }) => {
 });
 
 bot.onSlashCommand("github", async (handler, event) => {
-  await handleGithubSubscription(handler, event, subscriptionService);
+  await handleGithubSubscription(
+    handler,
+    event,
+    subscriptionService,
+    oauthService
+  );
 });
 
 bot.onSlashCommand("gh_pr", async (handler, event) => {

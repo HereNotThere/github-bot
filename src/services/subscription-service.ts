@@ -31,6 +31,7 @@ export interface SubscribeResult {
   deliveryMode?: "webhook" | "polling";
   suggestInstall?: boolean;
   isAdmin?: boolean;
+  eventTypes?: string;
   error?: string;
 }
 
@@ -55,9 +56,7 @@ export class SubscriptionService {
    * Subscribe a channel to a GitHub repository
    * Implements the full OAuth-first flow from the implementation plan
    */
-  async subscribeToRepository(
-    params: SubscribeParams
-  ): Promise<SubscribeResult> {
+  async createSubscription(params: SubscribeParams): Promise<SubscribeResult> {
     const { townsUserId, spaceId, channelId, repoIdentifier, eventTypes } =
       params;
 
@@ -70,22 +69,12 @@ export class SubscriptionService {
       };
     }
 
-    // 1. Check OAuth linked
+    // 1. Get OAuth token (assumes caller has checked OAuth is linked)
     const githubToken = await this.oauthService.getToken(townsUserId);
     if (!githubToken) {
-      const authUrl = await this.oauthService.getAuthorizationUrl(
-        townsUserId,
-        channelId,
-        spaceId,
-        "subscribe",
-        { repo: repoIdentifier, eventTypes }
+      throw new Error(
+        "OAuth token not found. Caller should check OAuth status before calling createSubscription."
       );
-
-      return {
-        success: false,
-        requiresOAuth: true,
-        authUrl,
-      };
     }
 
     // Get user's GitHub login for tracking
@@ -128,6 +117,8 @@ export class SubscriptionService {
           success: false,
           requiresInstallation: true,
           installUrl,
+          repoFullName: repoInfo.fullName,
+          eventTypes: eventTypes || DEFAULT_EVENT_TYPES,
           error: `Private repository requires GitHub App installation`,
         };
       }
@@ -203,6 +194,7 @@ export class SubscriptionService {
       deliveryMode,
       suggestInstall,
       isAdmin: isUserAdmin,
+      eventTypes: eventTypes || DEFAULT_EVENT_TYPES,
       installUrl: suggestInstall
         ? this.generateInstallUrl(repoInfo.owner.id)
         : undefined,
