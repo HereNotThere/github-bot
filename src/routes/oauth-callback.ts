@@ -68,7 +68,7 @@ export async function handleOAuthCallback(
 
           await bot.sendMessage(
             result.channelId,
-            `✅ **Subscribed to ${subResult.repoFullName}**\n\n${deliveryInfo}`
+            `✅ **Subscribed to [${subResult.repoFullName}](https://github.com/${subResult.repoFullName})**\n\n${deliveryInfo}`
           );
         } else if (subResult.requiresInstallation && subResult.installUrl) {
           // Private repo - needs installation

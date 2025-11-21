@@ -155,10 +155,9 @@ async function handleSubscribe(
 
   await handler.sendMessage(
     channelId,
-    `✅ **Subscribed to ${result.repoFullName}**\n\n` +
-      `📡 Event types: **${eventTypeDisplay}**\n` +
-      `${deliveryInfo}\n\n` +
-      `🔗 https://github.com/${result.repoFullName}`
+    `✅ **Subscribed to [${result.repoFullName}](https://github.com/${result.repoFullName})**\n\n` +
+      `📡 Event types: **${eventTypeDisplay}**\n\n` +
+      `${deliveryInfo}`
   );
 }
 
