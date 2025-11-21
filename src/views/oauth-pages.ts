@@ -79,7 +79,7 @@ export function renderSuccess(
               if (countdownEl) countdownEl.textContent = String(countdown);
               if (countdown === 0) {
                 clearInterval(interval);
-                window.location.href = ${JSON.stringify(safeInstallUrl)};
+                window.location.href = ${JSON.stringify(sub.installUrl)};
               }
             }, 1000);
           </script>
@@ -153,7 +153,7 @@ export function renderSuccess(
               if (countdownEl) countdownEl.textContent = String(countdown);
               if (countdown === 0) {
                 clearInterval(interval);
-                window.location.href = ${JSON.stringify(safeInstallUrl)};
+                window.location.href = ${JSON.stringify(sub.installUrl || "")};
               }
             }, 1000);
           </script>
