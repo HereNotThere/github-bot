@@ -47,7 +47,8 @@ const userOAuthClient = new UserOAuthClient();
 const subscriptionService = new SubscriptionService(
   oauthService,
   userOAuthClient,
-  installationService
+  installationService,
+  bot
 );
 
 // Enable automatic subscription upgrades when repos are added to GitHub App

@@ -1,9 +1,14 @@
 import { and, eq } from "drizzle-orm";
 
-import { DEFAULT_EVENT_TYPES } from "../constants/event-types";
+import {
+  DEFAULT_EVENT_TYPES,
+  PENDING_MESSAGE_CLEANUP_INTERVAL_MS,
+  PENDING_MESSAGE_MAX_AGE_MS,
+} from "../constants";
 import { db } from "../db";
 import { githubSubscriptions } from "../db/schema";
 import { InstallationService } from "../github-app/installation-service";
+import type { TownsBot } from "../types/bot";
 import { GitHubOAuthService } from "./github-oauth-service";
 import { UserOAuthClient, type RepositoryInfo } from "./user-oauth-client";
 
@@ -60,11 +65,23 @@ type SubscribeFailure =
  * - Public repos fall back to polling if GitHub App not installed
  */
 export class SubscriptionService {
+  private pendingMessages = new Map<
+    string,
+    { eventId: string; channelId: string; timestamp: number }
+  >();
+
   constructor(
     private oauthService: GitHubOAuthService,
     private userClient: UserOAuthClient,
-    private installationService: InstallationService
-  ) {}
+    private installationService: InstallationService,
+    private bot?: TownsBot
+  ) {
+    // Clean up stale pending messages periodically
+    setInterval(
+      () => this.cleanupPendingMessages(),
+      PENDING_MESSAGE_CLEANUP_INTERVAL_MS
+    );
+  }
 
   /**
    * Subscribe a channel to a GitHub repository
@@ -329,9 +346,68 @@ export class SubscriptionService {
           eq(githubSubscriptions.deliveryMode, "polling")
         )
       )
-      .returning({ id: githubSubscriptions.id });
+      .returning({
+        id: githubSubscriptions.id,
+        channelId: githubSubscriptions.channelId,
+      });
+
+    // Update pending Towns messages to reflect webhook upgrade (in parallel)
+    await Promise.allSettled(
+      result.map(async sub => {
+        const key = `${sub.channelId}:${repoFullName}`;
+        const pending = this.pendingMessages.get(key);
+
+        if (pending && this.bot) {
+          try {
+            await this.bot.editMessage(
+              pending.channelId,
+              pending.eventId,
+              `✅ **Subscribed to [${repoFullName}](https://github.com/${repoFullName})**\n\n⚡ Real-time webhook delivery enabled!`
+            );
+            this.pendingMessages.delete(key);
+          } catch (error) {
+            console.error(
+              `Failed to update subscription message for ${repoFullName}:`,
+              error
+            );
+            // Remove from pending even if edit fails (avoid retry loops)
+            this.pendingMessages.delete(key);
+          }
+        }
+      })
+    );
 
     return result.length;
+  }
+
+  /**
+   * Register a pending subscription message for later updates
+   */
+  registerPendingMessage(
+    channelId: string,
+    repoFullName: string,
+    eventId: string
+  ): void {
+    const key = `${channelId}:${repoFullName}`;
+    this.pendingMessages.set(key, {
+      eventId,
+      channelId,
+      timestamp: Date.now(),
+    });
+  }
+
+  /**
+   * Clean up stale pending messages
+   * Called periodically to prevent memory leaks
+   */
+  private cleanupPendingMessages(): void {
+    const now = Date.now();
+
+    for (const [key, pending] of this.pendingMessages.entries()) {
+      if (now - pending.timestamp > PENDING_MESSAGE_MAX_AGE_MS) {
+        this.pendingMessages.delete(key);
+      }
+    }
   }
 
   /**

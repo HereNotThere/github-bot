@@ -1,9 +1,6 @@
 import type { BotHandler } from "@towns-protocol/bot";
 
-import {
-  ALLOWED_EVENT_TYPES,
-  DEFAULT_EVENT_TYPES,
-} from "../constants/event-types";
+import { ALLOWED_EVENT_TYPES, DEFAULT_EVENT_TYPES } from "../constants";
 import type { GitHubOAuthService } from "../services/github-oauth-service";
 import type { SubscriptionService } from "../services/subscription-service";
 import type { SlashCommandEvent } from "../types/bot";

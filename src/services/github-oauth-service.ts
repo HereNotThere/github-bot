@@ -13,6 +13,26 @@ import { githubUserTokens, oauthStates } from "../db/schema";
 import { GitHubApp } from "../github-app/app";
 
 /**
+ * Redirect data for subscription action
+ */
+export interface SubscriptionRedirectData {
+  repo: string;
+  eventTypes?: string;
+}
+
+/**
+ * Result returned from handleCallback after OAuth completion
+ */
+export interface OAuthCallbackResult {
+  townsUserId: string;
+  channelId: string;
+  spaceId: string | null;
+  redirectAction: string | null;
+  redirectData: SubscriptionRedirectData | null;
+  githubLogin: string;
+}
+
+/**
  * GitHubOAuthService - Manages OAuth authentication for Towns users
  *
  * Uses Octokit app's built-in OAuth support (app.oauth) to:
@@ -106,7 +126,10 @@ export class GitHubOAuthService {
    * @param state - State parameter for validation
    * @returns OAuth state data with redirect information
    */
-  async handleCallback(code: string, state: string) {
+  async handleCallback(
+    code: string,
+    state: string
+  ): Promise<OAuthCallbackResult> {
     // Validate state and get stored data
     const [stateData] = await db
       .select()
