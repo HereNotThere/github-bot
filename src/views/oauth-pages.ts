@@ -61,13 +61,14 @@ function renderOAuthOnlySuccess(c: Context) {
 /**
  * Private repo requiring GitHub App installation
  */
-function renderInstallRequired(c: Context, sub: SubscribeResult) {
-  // Caller ensures this is the requiresInstallation variant
-  if (!sub.success && sub.requiresInstallation) {
-    const safeRepo = escapeHtml(sub.repoFullName);
-    const safeInstallUrl = escapeHtml(sub.installUrl);
+function renderInstallRequired(
+  c: Context,
+  sub: Extract<SubscribeResult, { requiresInstallation: true }>
+) {
+  const safeRepo = escapeHtml(sub.repoFullName);
+  const safeInstallUrl = escapeHtml(sub.installUrl);
 
-    return c.html(`
+  return c.html(`
     <!DOCTYPE html>
     <html>
       <head>
@@ -100,21 +101,20 @@ function renderInstallRequired(c: Context, sub: SubscribeResult) {
         </script>
       </body>
     </html>
-    `);
-  }
-  // Fallback (should never reach here due to caller's type narrowing)
-  return c.html("<html><body>Error</body></html>");
+  `);
 }
 
 /**
  * Subscription success with webhook delivery
  */
-function renderWebhookSuccess(c: Context, sub: SubscribeResult) {
-  if (sub.success && sub.deliveryMode === "webhook") {
-    const safeRepo = escapeHtml(sub.repoFullName);
-    const safeEvents = escapeHtml(sub.eventTypes);
+function renderWebhookSuccess(
+  c: Context,
+  sub: Extract<SubscribeResult, { deliveryMode: "webhook" }>
+) {
+  const safeRepo = escapeHtml(sub.repoFullName);
+  const safeEvents = escapeHtml(sub.eventTypes);
 
-    return c.html(`
+  return c.html(`
     <!DOCTYPE html>
     <html>
       <head>
@@ -133,21 +133,21 @@ function renderWebhookSuccess(c: Context, sub: SubscribeResult) {
       </body>
     </html>
   `);
-  }
-  return c.html("<html><body>Error</body></html>");
 }
 
 /**
  * Subscription success with polling delivery (public repo without app)
  */
-function renderPollingSuccess(c: Context, sub: SubscribeResult) {
-  if (sub.success && sub.deliveryMode === "polling") {
-    const safeRepo = escapeHtml(sub.repoFullName);
-    const safeEvents = escapeHtml(sub.eventTypes);
-    const safeInstallUrl = escapeHtml(sub.installUrl);
-    const installMessage = "Install the GitHub App for real-time delivery:";
+function renderPollingSuccess(
+  c: Context,
+  sub: Extract<SubscribeResult, { deliveryMode: "polling" }>
+) {
+  const safeRepo = escapeHtml(sub.repoFullName);
+  const safeEvents = escapeHtml(sub.eventTypes);
+  const safeInstallUrl = escapeHtml(sub.installUrl);
+  const installMessage = "Install the GitHub App for real-time delivery:";
 
-    return c.html(`
+  return c.html(`
     <!DOCTYPE html>
     <html>
       <head>
@@ -184,18 +184,18 @@ function renderPollingSuccess(c: Context, sub: SubscribeResult) {
       </body>
     </html>
   `);
-  }
-  return c.html("<html><body>Error</body></html>");
 }
 
 /**
  * Subscription error page
  */
-function renderSubscriptionError(c: Context, sub: SubscribeResult) {
-  if (!sub.success) {
-    const safeError = escapeHtml(sub.error);
+function renderSubscriptionError(
+  c: Context,
+  sub: Extract<SubscribeResult, { success: false }>
+) {
+  const safeError = escapeHtml(sub.error);
 
-    return c.html(`
+  return c.html(`
     <!DOCTYPE html>
     <html>
       <head>
@@ -213,8 +213,6 @@ function renderSubscriptionError(c: Context, sub: SubscribeResult) {
       </body>
     </html>
   `);
-  }
-  return c.html("<html><body>Error</body></html>");
 }
 
 /**
