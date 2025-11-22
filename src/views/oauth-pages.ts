@@ -1,171 +1,200 @@
 import type { Context } from "hono";
 
-import { DEFAULT_EVENT_TYPES } from "../constants/event-types";
+import type { SubscribeResult } from "../services/subscription-service";
 import { escapeHtml } from "../utils/html-escape";
 
 /**
- * Render success page after OAuth completion
+ * Render success page after OAuth completion - Main dispatcher
  */
 export function renderSuccess(
   c: Context,
   data?: {
     action?: string;
-    subscriptionResult?: {
-      success: boolean;
-      requiresInstallation?: boolean;
-      repoFullName?: string;
-      deliveryMode?: "webhook" | "polling";
-      suggestInstall?: boolean;
-      installUrl?: string;
-      isAdmin?: boolean;
-      eventTypes?: string;
-      error?: string;
-    };
+    subscriptionResult?: SubscribeResult;
   }
 ) {
-  // OAuth-only flow (no subscription)
-  if (!data || !data.subscriptionResult) {
-    return c.html(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <meta charset="UTF-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>GitHub Connected</title>
-          ${renderStyles()}
-        </head>
-        <body>
-          <div class="container">
-            <h1>✅ Success!</h1>
-            <p>Your GitHub account has been connected.</p>
-            <p>You can close this window and return to Towns.</p>
-          </div>
-        </body>
-      </html>
-    `);
+  if (!data?.subscriptionResult) {
+    return renderOAuthOnlySuccess(c);
   }
 
   const sub = data.subscriptionResult;
 
-  // Private repo requiring installation
-  if (sub.requiresInstallation && sub.installUrl) {
-    const safeRepo = escapeHtml(sub.repoFullName || "this repository");
-    const safeInstallUrl = escapeHtml(sub.installUrl);
-
-    return c.html(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <meta charset="UTF-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>Installation Required</title>
-          ${renderStyles()}
-        </head>
-        <body>
-          <div class="container">
-            <h1>⚠️ GitHub App Installation Required</h1>
-            <p class="repo-name">Repository: <strong>${safeRepo}</strong></p>
-            <p>This private repository requires the GitHub App to be installed.</p>
-            <p>Click the button below to install the app and enable subscription.</p>
-            <a href="${safeInstallUrl}" class="install-button">Install GitHub App</a>
-            <p class="note">After installation, return to Towns and run <code>/github subscribe ${safeRepo}</code> again.</p>
-            <p class="redirect-info">Redirecting in <span id="countdown">2</span> seconds...</p>
-          </div>
-          <script>
-            let countdown = 2;
-            const countdownEl = document.getElementById('countdown');
-            const interval = setInterval(() => {
-              countdown--;
-              if (countdownEl) countdownEl.textContent = String(countdown);
-              if (countdown === 0) {
-                clearInterval(interval);
-                window.location.href = ${JSON.stringify(sub.installUrl)};
-              }
-            }, 1000);
-          </script>
-        </body>
-      </html>
-    `);
+  if (!sub.success && sub.requiresInstallation) {
+    return renderInstallRequired(c, sub);
   }
 
-  // Subscription success - Webhook mode
   if (sub.success && sub.deliveryMode === "webhook") {
-    const safeRepo = escapeHtml(sub.repoFullName || "repository");
-    const safeEvents = escapeHtml(sub.eventTypes || DEFAULT_EVENT_TYPES);
-
-    return c.html(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <meta charset="UTF-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>Subscription Successful</title>
-          ${renderStyles()}
-        </head>
-        <body>
-          <div class="container">
-            <h1>✅ Subscribed to ${safeRepo}!</h1>
-            <p class="delivery-mode">⚡ Real-time webhook delivery enabled</p>
-            <p><strong>Events:</strong> ${safeEvents.replace(/,/g, ", ")}</p>
-            <p class="success-note">You can close this window and return to Towns.</p>
-          </div>
-        </body>
-      </html>
-    `);
+    return renderWebhookSuccess(c, sub);
   }
 
-  // Subscription success - Polling mode (public repo without app)
-  if (sub.success && sub.deliveryMode === "polling" && sub.suggestInstall) {
-    const safeRepo = escapeHtml(sub.repoFullName || "repository");
-    const safeEvents = escapeHtml(sub.eventTypes || DEFAULT_EVENT_TYPES);
-    const safeInstallUrl = escapeHtml(sub.installUrl || "");
-    const adminMessage = sub.isAdmin
-      ? "You can install the GitHub App for real-time delivery:"
-      : "Ask an admin to install the GitHub App for real-time delivery:";
-
-    return c.html(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <meta charset="UTF-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <title>Subscription Successful</title>
-          ${renderStyles()}
-        </head>
-        <body>
-          <div class="container">
-            <h1>✅ Subscribed to ${safeRepo}!</h1>
-            <p class="delivery-mode">⏱️ Currently using 5-minute polling</p>
-            <p><strong>Events:</strong> ${safeEvents.replace(/,/g, ", ")}</p>
-            <div class="install-section">
-              <p>💡 <strong>Want real-time updates?</strong></p>
-              <p>${escapeHtml(adminMessage)}</p>
-              <a href="${safeInstallUrl}" class="install-button">Install GitHub App</a>
-              <p class="redirect-info">Auto-redirecting to installation in <span id="countdown">5</span> seconds...</p>
-              <p class="note">You can close this window and return to Towns.</p>
-            </div>
-          </div>
-          <script>
-            let countdown = 5;
-            const countdownEl = document.getElementById('countdown');
-            const interval = setInterval(() => {
-              countdown--;
-              if (countdownEl) countdownEl.textContent = String(countdown);
-              if (countdown === 0) {
-                clearInterval(interval);
-                window.location.href = ${JSON.stringify(sub.installUrl || "")};
-              }
-            }, 1000);
-          </script>
-        </body>
-      </html>
-    `);
+  if (sub.success && sub.deliveryMode === "polling") {
+    return renderPollingSuccess(c, sub);
   }
 
-  // Error case
-  const safeError = escapeHtml(
-    sub.error || "An error occurred during subscription"
-  );
+  return renderSubscriptionError(c, sub);
+}
+
+/**
+ * OAuth-only flow success page (no subscription)
+ */
+function renderOAuthOnlySuccess(c: Context) {
+  return c.html(`
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>GitHub Connected</title>
+        ${renderStyles()}
+      </head>
+      <body>
+        <div class="container">
+          <h1>✅ Success!</h1>
+          <p>Your GitHub account has been connected.</p>
+          <p>You can close this window and return to Towns.</p>
+        </div>
+      </body>
+    </html>
+  `);
+}
+
+/**
+ * Private repo requiring GitHub App installation
+ */
+function renderInstallRequired(
+  c: Context,
+  sub: Extract<SubscribeResult, { requiresInstallation: true }>
+) {
+  const safeRepo = escapeHtml(sub.repoFullName);
+  const safeInstallUrl = escapeHtml(sub.installUrl);
+
+  return c.html(`
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Installation Required</title>
+        ${renderStyles()}
+      </head>
+      <body>
+        <div class="container">
+          <h1>⚠️ GitHub App Installation Required</h1>
+          <p class="repo-name">Repository: <strong>${safeRepo}</strong></p>
+          <p>This private repository requires the GitHub App to be installed.</p>
+          <p>Click the button below to install the app and enable subscription.</p>
+          <a href="${safeInstallUrl}" class="install-button">Install GitHub App</a>
+          <p class="note">After installation, return to Towns and run <code>/github subscribe ${safeRepo}</code> again.</p>
+          <p class="redirect-info">Redirecting in <span id="countdown">2</span> seconds...</p>
+        </div>
+        <script>
+          let countdown = 2;
+          const countdownEl = document.getElementById('countdown');
+          const interval = setInterval(() => {
+            countdown--;
+            if (countdownEl) countdownEl.textContent = String(countdown);
+            if (countdown === 0) {
+              clearInterval(interval);
+              window.location.href = ${JSON.stringify(sub.installUrl)};
+            }
+          }, 1000);
+        </script>
+      </body>
+    </html>
+  `);
+}
+
+/**
+ * Subscription success with webhook delivery
+ */
+function renderWebhookSuccess(
+  c: Context,
+  sub: Extract<SubscribeResult, { deliveryMode: "webhook" }>
+) {
+  const safeRepo = escapeHtml(sub.repoFullName);
+  const safeEvents = escapeHtml(sub.eventTypes);
+
+  return c.html(`
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Subscription Successful</title>
+        ${renderStyles()}
+      </head>
+      <body>
+        <div class="container">
+          <h1>✅ Subscribed to ${safeRepo}!</h1>
+          <p class="delivery-mode">⚡ Real-time webhook delivery enabled</p>
+          <p><strong>Events:</strong> ${safeEvents.replace(/,/g, ", ")}</p>
+          <p class="success-note">You can close this window and return to Towns.</p>
+        </div>
+      </body>
+    </html>
+  `);
+}
+
+/**
+ * Subscription success with polling delivery (public repo without app)
+ */
+function renderPollingSuccess(
+  c: Context,
+  sub: Extract<SubscribeResult, { deliveryMode: "polling" }>
+) {
+  const safeRepo = escapeHtml(sub.repoFullName);
+  const safeEvents = escapeHtml(sub.eventTypes);
+  const safeInstallUrl = escapeHtml(sub.installUrl);
+  const installMessage = "Install the GitHub App for real-time delivery:";
+
+  return c.html(`
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Subscription Successful</title>
+        ${renderStyles()}
+      </head>
+      <body>
+        <div class="container">
+          <h1>✅ Subscribed to ${safeRepo}!</h1>
+          <p class="delivery-mode">⏱️ Currently using 5-minute polling</p>
+          <p><strong>Events:</strong> ${safeEvents.replace(/,/g, ", ")}</p>
+          <div class="install-section">
+            <p>💡 <strong>Want real-time updates?</strong></p>
+            <p>${installMessage}</p>
+            <a href="${safeInstallUrl}" class="install-button">Install GitHub App</a>
+            <p class="redirect-info">Auto-redirecting to installation in <span id="countdown">5</span> seconds...</p>
+            <p class="note">You can close this window and return to Towns.</p>
+          </div>
+        </div>
+        <script>
+          let countdown = 5;
+          const countdownEl = document.getElementById('countdown');
+          const interval = setInterval(() => {
+            countdown--;
+            if (countdownEl) countdownEl.textContent = String(countdown);
+            if (countdown === 0) {
+              clearInterval(interval);
+              window.location.href = ${JSON.stringify(sub.installUrl)};
+            }
+          }, 1000);
+        </script>
+      </body>
+    </html>
+  `);
+}
+
+/**
+ * Subscription error page
+ */
+function renderSubscriptionError(
+  c: Context,
+  sub: Extract<SubscribeResult, { success: false }>
+) {
+  const safeError = escapeHtml(sub.error);
+
   return c.html(`
     <!DOCTYPE html>
     <html>

@@ -19,21 +19,35 @@ export interface SubscribeParams {
 }
 
 /**
- * Subscription result
+ * Subscription result - discriminated union for type safety
  */
-export interface SubscribeResult {
-  success: boolean;
-  requiresOAuth?: boolean;
-  requiresInstallation?: boolean;
-  authUrl?: string;
-  installUrl?: string;
-  repoFullName?: string;
-  deliveryMode?: "webhook" | "polling";
-  suggestInstall?: boolean;
-  isAdmin?: boolean;
-  eventTypes?: string;
-  error?: string;
-}
+export type SubscribeResult = SubscribeSuccess | SubscribeFailure;
+
+type SubscribeSuccess =
+  | {
+      success: true;
+      deliveryMode: "webhook";
+      repoFullName: string;
+      eventTypes: string;
+    }
+  | {
+      success: true;
+      deliveryMode: "polling";
+      repoFullName: string;
+      eventTypes: string;
+      installUrl: string;
+    };
+
+type SubscribeFailure =
+  | { success: false; requiresInstallation: false; error: string }
+  | {
+      success: false;
+      requiresInstallation: true;
+      installUrl: string;
+      repoFullName: string;
+      eventTypes: string;
+      error: string;
+    };
 
 /**
  * SubscriptionService - OAuth-first subscription management
@@ -60,11 +74,15 @@ export class SubscriptionService {
     const { townsUserId, spaceId, channelId, repoIdentifier, eventTypes } =
       params;
 
+    // Normalize event types once to avoid duplication
+    const requestedEventTypes = eventTypes || DEFAULT_EVENT_TYPES;
+
     // Parse owner/repo
     const [owner, repo] = repoIdentifier.split("/");
     if (!owner || !repo) {
       return {
         success: false,
+        requiresInstallation: false,
         error: `Invalid repository format. Use: owner/repo`,
       };
     }
@@ -95,30 +113,26 @@ export class SubscriptionService {
           : `Failed to validate repository: ${repoIdentifier}`;
       return {
         success: false,
+        requiresInstallation: false,
         error: errorMessage,
       };
     }
 
     // 3. Determine delivery mode
     let deliveryMode: "webhook" | "polling";
-    let installationId: number | null = null;
-    let suggestInstall = false;
-    let isUserAdmin = false;
+    const installationId = await this.installationService.isRepoInstalled(
+      repoInfo.fullName
+    );
 
     if (repoInfo.isPrivate) {
       // Private repos MUST have GitHub App installed
-      installationId = await this.installationService.isRepoInstalled(
-        repoInfo.fullName
-      );
-
       if (!installationId) {
-        const installUrl = this.generateInstallUrl(repoInfo.owner.id);
         return {
           success: false,
           requiresInstallation: true,
-          installUrl,
+          installUrl: this.generateInstallUrl(repoInfo.owner.id),
           repoFullName: repoInfo.fullName,
-          eventTypes: eventTypes || DEFAULT_EVENT_TYPES,
+          eventTypes: requestedEventTypes,
           error: `Private repository requires GitHub App installation`,
         };
       }
@@ -126,29 +140,7 @@ export class SubscriptionService {
       deliveryMode = "webhook";
     } else {
       // Public repos: webhook if available, polling fallback
-      installationId = await this.installationService.isRepoInstalled(
-        repoInfo.fullName
-      );
-
-      if (installationId) {
-        deliveryMode = "webhook";
-      } else {
-        deliveryMode = "polling";
-        suggestInstall = true;
-
-        // Check if user is admin to customize install message
-        if (repoInfo.owner.type === "User") {
-          // Personal repo
-          isUserAdmin = repoInfo.owner.login === githubUser.login;
-        } else {
-          // Org repo - check membership
-          const membership = await this.userClient.checkOrgMembership(
-            githubToken,
-            repoInfo.owner.login
-          );
-          isUserAdmin = membership.role === "admin";
-        }
-      }
+      deliveryMode = installationId ? "webhook" : "polling";
     }
 
     // 4. Check if already subscribed
@@ -167,6 +159,7 @@ export class SubscriptionService {
     if (existing.length > 0) {
       return {
         success: false,
+        requiresInstallation: false,
         error: `Already subscribed to ${repoInfo.fullName}`,
       };
     }
@@ -183,22 +176,27 @@ export class SubscriptionService {
       createdByGithubLogin: githubUser.login,
       installationId,
       enabled: true,
-      eventTypes: eventTypes || DEFAULT_EVENT_TYPES,
+      eventTypes: requestedEventTypes,
       createdAt: now,
       updatedAt: now,
     });
 
-    return {
-      success: true,
-      repoFullName: repoInfo.fullName,
-      deliveryMode,
-      suggestInstall,
-      isAdmin: isUserAdmin,
-      eventTypes: eventTypes || DEFAULT_EVENT_TYPES,
-      installUrl: suggestInstall
-        ? this.generateInstallUrl(repoInfo.owner.id)
-        : undefined,
-    };
+    if (deliveryMode === "polling") {
+      return {
+        success: true,
+        deliveryMode: "polling",
+        repoFullName: repoInfo.fullName,
+        eventTypes: requestedEventTypes,
+        installUrl: this.generateInstallUrl(repoInfo.owner.id),
+      };
+    } else {
+      return {
+        success: true,
+        deliveryMode: "webhook",
+        repoFullName: repoInfo.fullName,
+        eventTypes: requestedEventTypes,
+      };
+    }
   }
 
   /**
