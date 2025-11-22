@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { serveStatic } from "hono/bun";
 import { logger } from "hono/logger";
 import { makeTownsBot } from "@towns-protocol/bot";
 
@@ -176,6 +177,15 @@ const { jwtMiddleware, handler } = bot.start();
 
 const app = new Hono();
 app.use(logger());
+
+// Serve static assets (OAuth page logos, etc.)
+app.use(
+  "/assets/*",
+  serveStatic({
+    root: "./assets",
+    rewriteRequestPath: path => path.replace(/^\/assets/, ""),
+  })
+);
 
 // Towns webhook endpoint
 app.post("/webhook", jwtMiddleware, handler);
