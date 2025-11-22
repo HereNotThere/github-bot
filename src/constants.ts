@@ -20,3 +20,15 @@ export const ALLOWED_EVENT_TYPES = [
   "stars",
   "forks",
 ] as const;
+
+/**
+ * Pending message cleanup interval (30 seconds)
+ * How often to check for and remove stale pending messages
+ */
+export const PENDING_MESSAGE_CLEANUP_INTERVAL_MS = 30000;
+
+/**
+ * Pending message max age (60 seconds)
+ * Messages older than this are considered stale and removed
+ */
+export const PENDING_MESSAGE_MAX_AGE_MS = 60000;

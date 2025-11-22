@@ -12,7 +12,7 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 
-import { DEFAULT_EVENT_TYPES } from "../constants/event-types";
+import { DEFAULT_EVENT_TYPES } from "../constants";
 
 /**
  * Stores OAuth tokens for GitHub users linked to Towns users

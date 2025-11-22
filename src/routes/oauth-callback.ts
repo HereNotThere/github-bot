@@ -1,6 +1,6 @@
 import type { Context } from "hono";
 
-import { DEFAULT_EVENT_TYPES } from "../constants/event-types";
+import { DEFAULT_EVENT_TYPES } from "../constants";
 import type { GitHubOAuthService } from "../services/github-oauth-service";
 import type { SubscriptionService } from "../services/subscription-service";
 import type { TownsBot } from "../types/bot";
@@ -38,18 +38,14 @@ export async function handleOAuthCallback(
 
     // If there was a redirect action (e.g., subscribe), complete the subscription
     if (result.redirectAction === "subscribe" && result.redirectData) {
-      const data = result.redirectData as {
-        repo?: string;
-        eventTypes?: string;
-      };
-      if (data.repo && result.spaceId && result.townsUserId) {
+      if (result.redirectData.repo && result.spaceId && result.townsUserId) {
         // Attempt subscription now that OAuth is complete
         const subResult = await subscriptionService.createSubscription({
           townsUserId: result.townsUserId,
           spaceId: result.spaceId,
           channelId: result.channelId,
-          repoIdentifier: data.repo,
-          eventTypes: data.eventTypes || DEFAULT_EVENT_TYPES,
+          repoIdentifier: result.redirectData.repo,
+          eventTypes: result.redirectData.eventTypes || DEFAULT_EVENT_TYPES,
         });
 
         if (subResult.success) {
@@ -57,12 +53,21 @@ export async function handleOAuthCallback(
           const deliveryInfo =
             subResult.deliveryMode === "webhook"
               ? "⚡ Real-time webhook delivery enabled!"
-              : `⏱️ Events checked every 5 minutes\n\n💡 Install the GitHub App for real-time delivery:\n[Install](<${subResult.installUrl}>)`;
+              : `⏱️ Events checked every 5 minutes\n\n💡 [Install the GitHub App](<${subResult.installUrl}>) for real-time delivery`;
 
-          await bot.sendMessage(
+          const { eventId } = await bot.sendMessage(
             result.channelId,
             `✅ **Subscribed to [${subResult.repoFullName}](https://github.com/${subResult.repoFullName})**\n\n${deliveryInfo}`
           );
+
+          // Track polling messages for potential upgrade to webhook
+          if (subResult.deliveryMode === "polling" && eventId) {
+            subscriptionService.registerPendingMessage(
+              result.channelId,
+              subResult.repoFullName,
+              eventId
+            );
+          }
 
           // Return success page with subscription data
           return renderSuccess(c, {

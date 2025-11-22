@@ -1,9 +1,6 @@
 import type { BotHandler } from "@towns-protocol/bot";
 
-import {
-  ALLOWED_EVENT_TYPES,
-  DEFAULT_EVENT_TYPES,
-} from "../constants/event-types";
+import { ALLOWED_EVENT_TYPES, DEFAULT_EVENT_TYPES } from "../constants";
 import type { GitHubOAuthService } from "../services/github-oauth-service";
 import type { SubscriptionService } from "../services/subscription-service";
 import type { SlashCommandEvent } from "../types/bot";
@@ -156,8 +153,7 @@ async function handleSubscribe(
     // Add installation suggestion for public repos
     deliveryInfo =
       "⏱️ Events are checked every 5 minutes (polling mode)\n\n" +
-      `💡 **Want real-time notifications?** Install the GitHub App:\n` +
-      `   [Install GitHub App](${result.installUrl})`;
+      `💡 **Want real-time notifications?** [Install the GitHub App](${result.installUrl})`;
   }
 
   await handler.sendMessage(
