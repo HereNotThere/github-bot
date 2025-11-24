@@ -383,6 +383,11 @@ export class SubscriptionService {
     installationId: number,
     repos?: string[]
   ): Promise<{ downgraded: number; removed: number }> {
+    // Empty array means no repos to downgrade (no-op)
+    if (repos && repos.length === 0) {
+      return { downgraded: 0, removed: 0 };
+    }
+
     // Build WHERE conditions
     const conditions = [eq(githubSubscriptions.installationId, installationId)];
     if (repos && repos.length > 0) {
