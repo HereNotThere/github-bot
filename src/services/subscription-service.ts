@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
 import {
   getOwnerIdFromUsername,
@@ -367,6 +367,134 @@ export class SubscriptionService {
       .where(eq(githubSubscriptions.deliveryMode, "polling"));
 
     return results.map(r => r.repo);
+  }
+
+  /**
+   * Downgrade subscriptions when GitHub App access is removed
+   *
+   * Handles both full installation deletion and specific repository removal.
+   * Public repos are downgraded to polling mode, private repos are removed.
+   *
+   * @param installationId - The installation ID
+   * @param repos - Optional array of specific repos to downgrade. If undefined, downgrades all repos for the installation.
+   * @returns Object with counts of downgraded and removed subscriptions
+   */
+  async downgradeSubscriptions(
+    installationId: number,
+    repos?: string[]
+  ): Promise<{ downgraded: number; removed: number }> {
+    // Empty array means no repos to downgrade (no-op)
+    if (repos && repos.length === 0) {
+      return { downgraded: 0, removed: 0 };
+    }
+
+    // Build WHERE conditions
+    const conditions = [eq(githubSubscriptions.installationId, installationId)];
+    if (repos && repos.length > 0) {
+      conditions.push(inArray(githubSubscriptions.repoFullName, repos));
+    }
+
+    // Find affected subscriptions
+    const affectedSubs = await db
+      .select({
+        id: githubSubscriptions.id,
+        repoFullName: githubSubscriptions.repoFullName,
+        isPrivate: githubSubscriptions.isPrivate,
+        channelId: githubSubscriptions.channelId,
+      })
+      .from(githubSubscriptions)
+      .where(and(...conditions));
+
+    if (affectedSubs.length === 0) {
+      return { downgraded: 0, removed: 0 };
+    }
+
+    // Split into public (can downgrade) and private (must remove)
+    const publicRepos = affectedSubs.filter(sub => !sub.isPrivate);
+    const privateRepos = affectedSubs.filter(sub => sub.isPrivate);
+
+    // Downgrade/remove subscriptions atomically
+    let downgraded = 0;
+    let removed = 0;
+
+    await db.transaction(async tx => {
+      // Downgrade public repos to polling
+      if (publicRepos.length > 0) {
+        const publicRepoNames = publicRepos.map(sub => sub.repoFullName);
+        const updateConditions = [
+          eq(githubSubscriptions.installationId, installationId),
+          inArray(githubSubscriptions.repoFullName, publicRepoNames),
+          eq(githubSubscriptions.isPrivate, false),
+        ];
+
+        const result = await tx
+          .update(githubSubscriptions)
+          .set({
+            deliveryMode: "polling",
+            installationId: null,
+            updatedAt: new Date(),
+          })
+          .where(and(...updateConditions))
+          .returning({ id: githubSubscriptions.id });
+
+        downgraded = result.length;
+      }
+
+      // Remove private repo subscriptions (can't poll private repos)
+      if (privateRepos.length > 0) {
+        const privateRepoNames = privateRepos.map(sub => sub.repoFullName);
+        const deleteConditions = [
+          eq(githubSubscriptions.installationId, installationId),
+          inArray(githubSubscriptions.repoFullName, privateRepoNames),
+          eq(githubSubscriptions.isPrivate, true),
+        ];
+
+        const result = await tx
+          .delete(githubSubscriptions)
+          .where(and(...deleteConditions))
+          .returning({ id: githubSubscriptions.id });
+
+        removed = result.length;
+      }
+    });
+
+    // Notify affected channels (in parallel)
+    if (this.bot) {
+      await Promise.allSettled([
+        ...publicRepos.map(async sub => {
+          try {
+            await this.bot!.sendMessage(
+              sub.channelId,
+              `⚠️ **${sub.repoFullName}** removed from GitHub App\n\n` +
+                `Downgraded to polling mode (5-minute intervals). ` +
+                `Add the repo back to the app installation for real-time webhooks.`
+            );
+          } catch (error) {
+            console.error(
+              `Failed to notify channel ${sub.channelId} about downgrade:`,
+              error
+            );
+          }
+        }),
+        ...privateRepos.map(async sub => {
+          try {
+            await this.bot!.sendMessage(
+              sub.channelId,
+              `❌ **${sub.repoFullName}** removed from GitHub App\n\n` +
+                `Subscription removed (private repos require app installation). ` +
+                `Use \`/github subscribe ${sub.repoFullName}\` to re-subscribe.`
+            );
+          } catch (error) {
+            console.error(
+              `Failed to notify channel ${sub.channelId} about removal:`,
+              error
+            );
+          }
+        }),
+      ]);
+    }
+
+    return { downgraded, removed };
   }
 
   /**
