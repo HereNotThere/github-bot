@@ -18,6 +18,7 @@ import { GitHubApp } from "../github-app/app";
 export interface SubscriptionRedirectData {
   repo: string;
   eventTypes?: string;
+  messageEventId?: string; // Optional eventId for editing OAuth prompt message
 }
 
 /**
@@ -108,7 +109,7 @@ export class GitHubOAuthService {
     channelId: string,
     spaceId: string,
     redirectAction?: string,
-    redirectData?: Record<string, any>
+    redirectData?: SubscriptionRedirectData
   ): Promise<string> {
     // Generate secure state token
     const state = randomBytes(32).toString("hex");
