@@ -92,7 +92,7 @@ async function handleShowIssue(
       }
 
       // No OAuth token - show connection prompt
-      await sendOAuthPrompt(handler, channelId, oauthService, userId, spaceId);
+      await sendOAuthPrompt(oauthService, handler, userId, channelId, spaceId);
       return;
     }
 
@@ -178,7 +178,7 @@ async function handleListIssues(
       }
 
       // No OAuth token - show connection prompt
-      await sendOAuthPrompt(handler, channelId, oauthService, userId, spaceId);
+      await sendOAuthPrompt(oauthService, handler, userId, channelId, spaceId);
       return;
     }
 

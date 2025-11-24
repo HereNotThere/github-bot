@@ -7,6 +7,7 @@ import {
 } from "../services/github-oauth-service";
 import type { SubscriptionService } from "../services/subscription-service";
 import type { SlashCommandEvent } from "../types/bot";
+import { sendEditableOAuthPrompt } from "../utils/oauth-helpers";
 import { stripMarkdown } from "../utils/stripper";
 
 export async function handleGithubSubscription(
@@ -104,34 +105,47 @@ async function handleSubscribe(
   const tokenStatus = await oauthService.validateToken(userId);
 
   if (tokenStatus !== TokenStatus.Valid) {
-    const authUrl = await oauthService.getAuthorizationUrl(
-      userId,
-      channelId,
-      spaceId,
-      "subscribe",
-      { repo, eventTypes }
-    );
-
     switch (tokenStatus) {
       case TokenStatus.NotLinked:
-        await handler.sendMessage(
+        // Use two-phase pattern for editable OAuth prompts
+        await sendEditableOAuthPrompt(
+          oauthService,
+          handler,
+          userId,
           channelId,
+          spaceId,
           `🔐 **GitHub Account Required**\n\n` +
             `To subscribe to repositories, you need to connect your GitHub account.\n\n` +
-            `[Connect GitHub Account](${authUrl})`
+            `[Connect GitHub Account]({authUrl})`,
+          "subscribe",
+          { repo, eventTypes }
         );
         return;
 
       case TokenStatus.Invalid:
-        await handler.sendMessage(
+        await sendEditableOAuthPrompt(
+          oauthService,
+          handler,
+          userId,
           channelId,
+          spaceId,
           `⚠️ **GitHub Token Expired**\n\n` +
             `Your GitHub token has expired or been revoked. Please reconnect your account.\n\n` +
-            `[Reconnect GitHub Account](${authUrl})`
+            `[Reconnect GitHub Account]({authUrl})`,
+          "subscribe",
+          { repo, eventTypes }
         );
         return;
 
-      case TokenStatus.Unknown:
+      case TokenStatus.Unknown: {
+        // Generate auth URL for Unknown status (not using two-phase pattern as this is less common)
+        const authUrl = await oauthService.getAuthorizationUrl(
+          userId,
+          channelId,
+          spaceId,
+          "subscribe",
+          { repo, eventTypes }
+        );
         await handler.sendMessage(
           channelId,
           `⚠️ **Unable to Verify GitHub Connection**\n\n` +
@@ -139,6 +153,7 @@ async function handleSubscribe(
             `Please try again in a few moments, or [reconnect your account](${authUrl}) if the problem persists.`
         );
         return;
+      }
 
       default: {
         // TypeScript exhaustiveness check

@@ -30,11 +30,30 @@ export async function handleOAuthCallback(
     // Handle OAuth callback
     const result = await oauthService.handleCallback(code, state);
 
-    // Send success message to the channel
-    await bot.sendMessage(
-      result.channelId,
-      `✅ GitHub account @${result.githubLogin} connected successfully!`
-    );
+    // Check if we should edit an existing message or send a new one
+    if (result.redirectData?.messageEventId) {
+      // Edit the OAuth prompt message to show success
+      try {
+        await bot.editMessage(
+          result.channelId,
+          result.redirectData.messageEventId,
+          `✅ GitHub account @${result.githubLogin} connected successfully!`
+        );
+      } catch (error) {
+        // If edit fails (message deleted, etc.), fall back to sending new message
+        console.error("Failed to edit OAuth message:", error);
+        await bot.sendMessage(
+          result.channelId,
+          `✅ GitHub account @${result.githubLogin} connected successfully!`
+        );
+      }
+    } else {
+      // Send new success message (for fresh OAuth connections or old flow)
+      await bot.sendMessage(
+        result.channelId,
+        `✅ GitHub account @${result.githubLogin} connected successfully!`
+      );
+    }
 
     // If there was a redirect action (e.g., subscribe), complete the subscription
     if (result.redirectAction === "subscribe" && result.redirectData) {
