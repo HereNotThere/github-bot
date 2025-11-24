@@ -49,8 +49,8 @@ export async function sendOAuthPrompt(
  * @param channelId - Channel to send message to
  * @param spaceId - Space ID
  * @param message - Message to display, with `\{authUrl\}` as placeholder
- * @param redirectAction - Optional action to perform after OAuth
- * @param redirectData - Optional data for redirect action
+ * @param redirectAction - Action to perform after OAuth (e.g., 'subscribe')
+ * @param redirectData - Data for redirect action (must include repo)
  * @returns The eventId of the message for potential further edits
  */
 export async function sendEditableOAuthPrompt(
@@ -60,9 +60,17 @@ export async function sendEditableOAuthPrompt(
   channelId: string,
   spaceId: string,
   message: string,
-  redirectAction?: string,
-  redirectData?: Omit<SubscriptionRedirectData, "messageEventId">
+  redirectAction: string,
+  redirectData: Omit<SubscriptionRedirectData, "messageEventId">
 ): Promise<string | null> {
+  // Validate placeholder exists
+  if (!message.includes("{authUrl}")) {
+    console.error(
+      "sendEditableOAuthPrompt: message must contain {authUrl} placeholder"
+    );
+    return null;
+  }
+
   try {
     // Phase 1: Send initial checking message and capture eventId
     const { eventId } = await handler.sendMessage(
