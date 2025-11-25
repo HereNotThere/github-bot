@@ -12,7 +12,9 @@ describe("gh_pr handler - Integration", () => {
     const mockHandler = createMockBotHandler();
     const mockOAuthService = {
       getUserOctokit: mock(() => Promise.resolve(null)),
-      getAuthorizationUrl: mock(() => Promise.resolve("https://oauth.example.com")),
+      getAuthorizationUrl: mock(() =>
+        Promise.resolve("https://oauth.example.com")
+      ),
     } as any;
 
     await handleGhPr(
@@ -69,7 +71,9 @@ describe("gh_pr handler - Integration", () => {
     const mockHandler = createMockBotHandler();
     const mockOAuthService = {
       getUserOctokit: mock(() => Promise.resolve(null)), // Return null, not error
-      getAuthorizationUrl: mock(() => Promise.resolve("https://oauth.example.com")),
+      getAuthorizationUrl: mock(() =>
+        Promise.resolve("https://oauth.example.com")
+      ),
     } as any;
 
     await handleGhPr(
@@ -100,7 +104,9 @@ describe("gh_pr handler - Integration", () => {
     const mockHandler = createMockBotHandler();
     const mockOAuthService = {
       getUserOctokit: mock(() => Promise.resolve(null)), // Return null, not error
-      getAuthorizationUrl: mock(() => Promise.resolve("https://oauth.example.com")),
+      getAuthorizationUrl: mock(() =>
+        Promise.resolve("https://oauth.example.com")
+      ),
     } as any;
 
     await handleGhPr(

@@ -67,9 +67,7 @@ describe("github subscription handler", () => {
       expect(mockHandler.sendMessage).toHaveBeenCalledTimes(1);
       const calls = mockHandler.sendMessage.mock.calls;
       expect(calls[0][0]).toBe("test-channel");
-      expect(calls[0][1]).toContain(
-        `all,${ALLOWED_EVENT_TYPES.join(",")}`
-      );
+      expect(calls[0][1]).toContain(`all,${ALLOWED_EVENT_TYPES.join(",")}`);
     });
 
     test("should send error for unknown action", async () => {
@@ -151,9 +149,7 @@ describe("github subscription handler", () => {
 
       expect(mockHandler.sendMessage).toHaveBeenCalledTimes(1);
       const message = mockHandler.sendMessage.mock.calls[0][1];
-      expect(message).toContain(
-        `all,${ALLOWED_EVENT_TYPES.join(",")}`
-      );
+      expect(message).toContain(`all,${ALLOWED_EVENT_TYPES.join(",")}`);
     });
 
     test("should send error for invalid repo format (no slash)", async () => {
