@@ -29,8 +29,8 @@ Query and subscribe to repositories using slash commands. See [Usage](#usage) se
 
 - **GitHub App Integration** - Official GitHub App with OAuth authentication
 - **Dual Delivery Modes** - Real-time webhooks OR 5-minute polling fallback
-- **OAuth-First Architecture** - Users authenticate with their GitHub account
-- **Private Repository Support** - Access private repos with user permissions
+- **OAuth-First Architecture** - Single OAuth flow; subscriptions are created as soon as the callback finishes
+- **Private Repository Support** - Access private repos with user permissions (GitHub App installation required)
 - **Smart Delivery** - Automatic webhook mode when GitHub App is installed
 - **Event Filtering** - Subscribe to specific event types (pr, issues, commits, etc.)
 - **Channel-Based Subscriptions** - Each channel has independent subscriptions
@@ -43,7 +43,7 @@ Query and subscribe to repositories using slash commands. See [Usage](#usage) se
 - Bun installed (`curl -fsSL https://bun.sh/install | bash`)
 - PostgreSQL database (local Docker or hosted on Render/Neon)
 - Towns bot created via Developer Portal (app.towns.com/developer)
-- GitHub App created (optional - enables real-time webhooks)
+- GitHub App created (required for private repos + real-time webhooks, optional for public-only polling)
 
 ### 2. Local Development Setup
 
@@ -147,12 +147,16 @@ The bot supports two delivery modes:
 /github unsubscribe owner/repo
 ```
 
+First-time subscriptions open an OAuth window; after authorization the callback immediately creates the subscription, posts the delivery mode back into Towns, and shows the success page with webhook vs. polling status.
+
 **Event types:** `pr`, `issues`, `commits`, `releases`, `ci`, `comments`, `reviews`, `branches`, `forks`, `stars`, `all`
 
 **Delivery modes:**
 
 - With GitHub App installed: Real-time webhooks (instant)
 - Without GitHub App: Polling mode (5-minute intervals)
+
+> Private repositories always require the GitHub App to be installed on the target repo or organization. Public repositories can fall back to polling until the installation is completed.
 
 ### Query Commands
 
@@ -209,6 +213,7 @@ All webhook events above, plus:
 - **No interactive actions** - Towns Protocol doesn't support buttons/forms yet
 - **No threaded conversations** - All notifications sent as top-level messages
 - **5-minute polling delay** - Without GitHub App, events have 5-minute latency
+- **OAuth token expiration** - Users may need to reauthorize periodically (token refresh not yet implemented)
 
 ## Future Enhancements
 
@@ -216,11 +221,16 @@ All webhook events above, plus:
 
 - [x] Automatic subscription upgrade when GitHub App is installed
 - [x] Private repo support for `/gh_pr` and `/gh_issue` commands
+- [x] Improved subscription UX - Single OAuth flow with immediate subscription creation
+- [x] Enhanced OAuth success page - Installation countdown and auto-redirect
+- [x] Pending subscriptions for private repos - Auto-complete when GitHub App is installed
+
+### Priority
+
+- [ ] OAuth token renewal - Automatically refresh expired tokens instead of prompting reauthorization
 
 ### Subscription & UX
 
-- [x] Improved subscription UX - Single OAuth flow with immediate subscription creation
-- [x] Enhanced OAuth success page - Installation countdown and auto-redirect
 - [ ] Granular unsubscribe - Unsubscribe from specific event types without removing entire repo subscription
 - [ ] Subscription management - Update event filters for existing subscriptions
 
@@ -231,6 +241,7 @@ All webhook events above, plus:
 
 ### Commands & Queries
 
+- [ ] `/gh_stat owner/repo` - Repository statistics and contributor leaderboard
 - [ ] More slash commands (`/gh search`, `/gh_release list`)
 - [ ] PR/Issue status commands (`/gh_pr merge`, `/gh_issue close`)
 - [ ] Advanced filtering (labels, assignees, milestones)

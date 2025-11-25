@@ -67,7 +67,7 @@ GitHub's Events API has critical limitations:
 1. **Dual-mode architecture**: Automatically use webhooks when app installed, fall back to polling otherwise
 2. **No manual webhook configuration**: GitHub App manages webhooks automatically
 3. **Idempotency**: Track webhook deliveries by `X-GitHub-Delivery` header to prevent duplicates
-4. **Database-backed state**: All installation and delivery state persisted in SQLite
+4. **Database-backed state**: Installation and delivery state persisted in PostgreSQL (Drizzle ORM)
 5. **Foreign key CASCADE**: Auto-cleanup when installations deleted
 
 ## Database Schema
@@ -79,8 +79,8 @@ CREATE TABLE github_installations (
   installation_id INTEGER PRIMARY KEY,
   account_login TEXT NOT NULL,
   account_type TEXT NOT NULL CHECK(account_type IN ('Organization', 'User')),
-  installed_at INTEGER NOT NULL,
-  suspended_at INTEGER,
+  installed_at TIMESTAMPTZ NOT NULL,
+  suspended_at TIMESTAMPTZ,
   app_slug TEXT NOT NULL DEFAULT 'towns-github-bot'
 );
 ```
@@ -91,7 +91,7 @@ CREATE TABLE github_installations (
 CREATE TABLE installation_repositories (
   installation_id INTEGER NOT NULL,
   repo_full_name TEXT NOT NULL,
-  added_at INTEGER NOT NULL,
+  added_at TIMESTAMPTZ NOT NULL,
   PRIMARY KEY (installation_id, repo_full_name),
   FOREIGN KEY (installation_id)
     REFERENCES github_installations(installation_id)
@@ -105,27 +105,29 @@ CREATE INDEX idx_installation_repos_by_name ON installation_repositories(repo_fu
 
 ```sql
 CREATE TABLE github_subscriptions (
-  subscription_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  id SERIAL PRIMARY KEY,
   space_id TEXT NOT NULL,
   channel_id TEXT NOT NULL,
   repo_full_name TEXT NOT NULL,
   delivery_mode TEXT NOT NULL CHECK (delivery_mode IN ('webhook', 'polling')),
-  is_private INTEGER NOT NULL CHECK (is_private IN (0, 1)),
-  created_by_towns_user_id TEXT NOT NULL,
+  is_private BOOLEAN NOT NULL,
+  created_by_towns_user_id TEXT NOT NULL
+    REFERENCES github_user_tokens(towns_user_id) ON DELETE CASCADE,
   created_by_github_login TEXT,
-  installation_id INTEGER,
-  enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL,
-  UNIQUE(space_id, channel_id, repo_full_name),
-  FOREIGN KEY (installation_id)
-    REFERENCES github_installations(installation_id)
-    ON DELETE SET NULL
+  installation_id INTEGER
+    REFERENCES github_installations(installation_id) ON DELETE SET NULL,
+  enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  event_types TEXT NOT NULL DEFAULT 'pr,issues,commits,releases',
+  created_at TIMESTAMPTZ NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL,
+  UNIQUE(space_id, channel_id, repo_full_name)
 );
 
 CREATE INDEX idx_subscriptions_by_repo ON github_subscriptions(repo_full_name);
 CREATE INDEX idx_subscriptions_by_channel ON github_subscriptions(channel_id);
 ```
+
+`github_user_tokens` (see `src/db/schema.ts`) stores the encrypted user OAuth credentials referenced by `created_by_towns_user_id`.
 
 ### webhook_deliveries
 
@@ -134,7 +136,7 @@ CREATE TABLE webhook_deliveries (
   delivery_id TEXT PRIMARY KEY,  -- X-GitHub-Delivery header
   installation_id INTEGER,
   event_type TEXT NOT NULL,
-  delivered_at INTEGER NOT NULL,
+  delivered_at TIMESTAMPTZ NOT NULL,
   status TEXT NOT NULL DEFAULT 'pending'
     CHECK(status IN ('pending', 'success', 'failed')),
   error TEXT,
@@ -212,47 +214,64 @@ export type IssuesPayload = WebhookPayload<"issues">;
 
 ## Subscription Flow
 
-### Improved UX: Single OAuth Flow
+### Single OAuth Flow (Shipped)
 
-**Goal:** User only leaves Towns app once. Subscription created automatically during OAuth callback.
+**Status:** Live in production — users only leave Towns once and the subscription is created automatically during the OAuth callback.
 
-### Flow Overview
+### Public Repository Flow
 
-```
+```text
 /github subscribe owner/repo
   ↓
-Ephemeral OAuth URL (security: only visible to requesting user)
+User has OAuth token?
+  ├─ No → Show OAuth URL → User authorizes → Callback stores token
+  └─ Yes → Continue
   ↓
-User authorizes on GitHub
+Check if GitHub App installed on repo
+  ├─ Installed → delivery_mode = 'webhook'
+  └─ Not installed → delivery_mode = 'polling'
   ↓
-OAuth Callback:
-  - Creates subscription immediately
-  - Determines delivery mode (webhook/polling)
-  - Returns success page with:
-    * Confirmation: "Subscribed to owner/repo!"
-    * If webhook: Just success
-    * If polling: Install instructions + auto-redirect countdown (5s)
+Create subscription immediately
   ↓
-[Optional] User installs GitHub App
+Success message in Towns + browser success page
   ↓
-Installation webhook → Automatically upgrades polling to webhook
+[If polling] Auto-redirect to GitHub App installation page (5s countdown)
+  ↓
+[Optional] User installs GitHub App → Webhook upgrades subscription automatically
 ```
 
-### Detailed Implementation
+### Private Repository Flow
 
-#### 1. Slash Command Handler (`/github subscribe owner/repo`)
+Private repos **require** the GitHub App to be installed before subscribing.
 
-**Purpose:** Validate input and show OAuth URL
+```text
+/github subscribe owner/repo
+  ↓
+User has OAuth token?
+  ├─ No → Show OAuth URL → User authorizes → Callback stores token
+  └─ Yes → Continue
+  ↓
+Check if GitHub App installed on repo
+  ├─ Installed → Create subscription with delivery_mode = 'webhook' → Success
+  └─ Not installed ↓
+        Store pending subscription in `pending_subscriptions` table
+        Show "Installation Required" page with redirect to GitHub App install
+        ↓
+        User installs GitHub App
+        ↓
+        Installation webhook fires → `completePendingSubscriptions()` runs
+        ↓
+        Subscription created automatically + notification sent to channel
+```
 
-**Steps:**
+**Pending Subscriptions:**
+- Stored in `pending_subscriptions` table with 1-hour expiration
+- Auto-completed when installation webhook fires for the target repo
+- Cleaned up periodically by `cleanupExpiredPendingSubscriptions()`
 
-1. Validate repository format (`owner/repo`)
-2. Parse optional `--events` flag
-3. Check if user has OAuth token:
-   - **No token:** Show ephemeral OAuth URL with subscription params in state
-   - **Has token:** This flow is deprecated (subscription now created in OAuth callback)
+### OAuth State
 
-**OAuth URL State Parameter:**
+State parameter passed through OAuth flow:
 
 ```json
 {
@@ -265,86 +284,16 @@ Installation webhook → Automatically upgrades polling to webhook
 }
 ```
 
-**Security:** OAuth URL sent as `ephemeral: true` message (only visible to requesting user)
+### Installation Webhook Handler
 
-#### 2. OAuth Callback (`/oauth/callback`)
+**Purpose:** Upgrade polling subscriptions and complete pending subscriptions
 
-**Purpose:** Create subscription immediately after authorization
-
-**Steps:**
-
-1. **Decode state and get user token:**
-   - Parse subscription params from OAuth state
-   - Retrieve newly created OAuth token for user
-
-2. **Resolve and validate repository:**
-   - Call `GET /repos/{owner}/{repo}` using user's OAuth token
-   - If 404/403 → return error page: "You don't have access to this repository"
-   - Extract from response:
-     - `repo_full_name` (normalized owner/repo)
-     - `private` flag (true/false)
-     - `owner.login`, `owner.type`, `owner.id`
-
-3. **Determine delivery mode:**
-   - Query `installation_repositories` to check if app installed
-   - **If private repo:**
-     - Installed → `delivery_mode = 'webhook'`
-     - Not installed → return error page: "Private repo requires GitHub App installation"
-   - **If public repo:**
-     - Installed → `delivery_mode = 'webhook'`
-     - Not installed → `delivery_mode = 'polling'`
-
-4. **Create subscription in database:**
-   - Insert into `github_subscriptions` table
-   - Include all metadata: `space_id`, `channel_id`, `repo_full_name`, `delivery_mode`, etc.
-
-5. **Return success page:**
-
-**Success Page Format:**
-
-```html
-<!-- Webhook mode -->
-✅ Subscribed to owner/repo! ⚡ Real-time webhook delivery enabled Events: Pull
-requests, Issues, Commits, ... You can close this window and return to Towns.
-
-<!-- Polling mode -->
-✅ Subscribed to owner/repo! ⏱️ Currently using 5-minute polling 💡 For
-real-time updates, install the GitHub App: [Install GitHub App Button]
-Auto-redirecting to installation in 5 seconds...
-<countdown timer> You can close this window and return to Towns.</countdown>
-```
-
-**Smart Installation URL:**
-
-- Pre-selects target account using `target_id=<owner.id>`
-- Example: `https://github.com/apps/towns-github-bot/installations/new/permissions?target_id=12345`
-
-**Admin Detection:**
-
-- Personal repos: `owner.type == 'User' && owner.login == github_user.login`
-- Org repos: Check `GET /user/memberships/orgs/{owner.login}` for `role == 'admin'`
-- Customize messaging: "You can install..." vs "Ask an admin to install..."
-
-#### 3. Installation Webhook Handler
-
-**Purpose:** Automatically upgrade subscriptions when app is installed
-
-**Already Implemented** (`InstallationService.upgradeToWebhook()`):
+Implemented in `InstallationService`:
 
 - Triggered by `installation.created` and `installation_repositories.added` events
-- Finds subscriptions with `delivery_mode = 'polling'` for the installed repo
-- Updates to `delivery_mode = 'webhook'` and sets `installation_id`
-- Sends notification to affected channels: "🔄 Upgraded owner/repo to real-time webhook delivery!"
-
-**No changes needed** - this already works correctly.
-
-### Key Benefits of New Flow
-
-1. **Single OAuth flow:** User only leaves Towns once (vs 2-3 times before)
-2. **Automatic subscription:** Created during OAuth callback (no re-running command)
-3. **Clear upgrade path:** Success page shows installation instructions with countdown
-4. **Security:** OAuth URLs are ephemeral (prevent account hijacking)
-5. **Seamless upgrade:** Installation automatically upgrades to webhooks
+- Upgrades existing polling subscriptions to webhook mode
+- Completes pending subscriptions for private repos
+- Sends notification to affected channels
 
 ## Configuration
 
@@ -385,7 +334,7 @@ Located at `github-app-manifest.json`. Key settings:
 - Installation notifications with automatic upgrade
 - Case-insensitive unsubscribe
 - Ephemeral OAuth URLs for security
-- Installation suggestions with admin detection
+- Pending subscriptions for private repos (auto-complete on install)
 
 **Documentation:**
 
@@ -396,21 +345,32 @@ Located at `github-app-manifest.json`. Key settings:
 
 ### 🚧 Remaining Work
 
-**Improved Subscription UX (Priority 1):**
+### Priority: OAuth Token Renewal
 
-- Single OAuth flow - Create subscription during OAuth callback (users don't re-run command)
-- Enhanced OAuth success page with installation countdown and auto-redirect
-- Pre-select repository in GitHub App installation URL using `target_id` parameter
+OAuth tokens expire and users are currently prompted to reauthorize. Implement automatic token refresh:
 
-**Query Commands (Priority 2):**
+- Store `refreshToken` and `refreshTokenExpiresAt` (schema already has columns)
+- Before API calls, check if access token is expired
+- Use `oauth.refreshToken()` to get new access token
+- Update stored token in database
+- Fall back to reauthorization prompt only if refresh fails
 
-- Additional commands: `/gh search`, `/gh_release list`
-- Repository search functionality
+**Subscription & UX:**
 
-**Event Organization (Priority 3):**
+- Granular unsubscribe - remove selected event types without dropping the repo
+- Subscription management - update event filters for existing subscriptions
+
+**Event Organization:**
 
 - Thread-based grouping for related events (PR + commits + CI)
-- Event summaries and digests
+- Event summaries / digests to reduce channel noise
+
+**New Commands:**
+
+- `/gh_stat owner/repo` - Repository statistics and contributor leaderboard (see Future Improvements)
+- `/gh search` - Search repos, issues, PRs
+- `/gh_release list owner/repo` - List releases
+- `/github test owner/repo` - Webhook diagnostics
 
 ## Testing Checklist
 
@@ -434,7 +394,7 @@ Located at `github-app-manifest.json`. Key settings:
 - Build: `bun install`
 - Start: `bun run src/index.ts`
 - Environment: Set all variables from `.env.sample`
-- Persistent disk: `/opt/render/project/src` for SQLite
+- Database: Managed PostgreSQL (Render, Neon, Supabase, etc.) via `DATABASE_URL`/`DATABASE_SSL`
 
 **Webhook URL**: Must be publicly accessible at `https://your-domain.com/github-webhook`
 
@@ -467,52 +427,84 @@ Located at `github-app-manifest.json`. Key settings:
 
 ## Query Commands Private Repo Support
 
-### Current Limitation
+The `/gh_pr` and `/gh_issue` commands now reuse the same OAuth-first strategy as subscriptions so private repositories behave exactly like public ones if the caller has access.
 
-The `/gh_pr` and `/gh_issue` commands use a static bot-level GitHub token, which only works for public repositories. Private repos fail with 403/404 errors and generic error messages.
+### Behavior
 
-### Strategy
+1. Handlers call the GitHub REST API with the bot token first (fast path for public repos).
+2. Errors are classified via `classifyApiError`.
+3. On `forbidden` or `not_found`, the bot looks up the requester's OAuth token (`GitHubOAuthService.getUserOctokit`):
+   - Token present → retry the API call with the user's credentials.
+   - Token missing → send the editable OAuth prompt so the user can connect without rerunning the command.
+   - Token present but request still fails → tell the user they don't have access to the repo.
+4. Rate limiting, missing args, and validation errors have dedicated responses so the UX mirrors `/github subscribe`.
 
-**OAuth-First Approach:** Use the user's personal GitHub OAuth token for private repo access.
+### References
 
-The infrastructure already exists:
-
-- `GitHubOAuthService` manages encrypted user tokens
-- `/github subscribe` implements the same OAuth flow pattern
-- `github_user_tokens` table stores tokens with AES-256-GCM encryption
-
-### Implementation Summary
-
-1. **Try bot token first** (works for public repos)
-2. **On 403/404, check if user has OAuth token:**
-   - Has token → retry with user's token
-   - No token → show OAuth connection prompt
-   - User token also fails → show access denied message
-3. **Add error classification:**
-   - 404 = repo not found
-   - 403 without OAuth = show connection prompt
-   - 403 with OAuth = user doesn't have access
-   - 429 = rate limited
-4. **Optional GitHub App fallback** for org-wide access without per-user OAuth
-
-### Changes Required
-
-- Modify `github-client` functions to accept optional user Octokit instance
-- Update handlers to inject `GitHubOAuthService` dependency
-- Add error classification helper
-- Wire OAuth service to command handlers in `index.ts`
-
-**Estimated effort:** 2-3 hours (infrastructure exists, just needs wiring)
+- `src/handlers/gh-pr-handler.ts` and `src/handlers/gh-issue-handler.ts` contain the fallback logic.
+- `src/utils/oauth-helpers.ts` provides the editable OAuth prompts.
+- `src/api/github-client.ts` accepts optional Octokit instances so all API helpers can run with either credential set.
 
 ## Future Improvements
 
-1. **Repo-specific installation URLs**: Pre-select repository in installation flow
-2. **Test webhook command**: `/github test owner/repo` to verify connectivity
-3. **Health indicators**: Show delivery latency and last event timestamp
-4. **Installation status command**: `/github app-status` to view all installations
-5. **Webhook delivery monitoring**: Track success/failure rates
-6. **Rate limit handling**: Graceful degradation if API limits hit
-7. **Multi-region deployment**: Reduce latency for global users
+1. **Health indicators**: Show delivery latency and last event timestamp
+2. **Installation status command**: `/github app-status` to view all installations
+3. **Webhook delivery monitoring**: Track success/failure rates
+4. **Rate limit handling**: Graceful degradation if API limits hit
+5. **Scheduled digests**: Daily/weekly summaries for quieter channels
+6. **Multi-region deployment**: Reduce latency for global users
+
+### `/gh_stat` Command Brainstorm
+
+A fun statistics command for repository insights and contributor leaderboards.
+
+**Possible Subcommands:**
+
+```bash
+/gh_stat owner/repo              # Overview: stars, forks, open issues/PRs, languages
+/gh_stat owner/repo contributors # Top contributors by commits (last 30/90 days)
+/gh_stat owner/repo activity     # Commit frequency, PR merge rate, issue close rate
+/gh_stat owner/repo leaderboard  # Gamified: lines added/removed, PRs merged, issues closed
+```
+
+**Data Sources (GitHub API):**
+
+- `GET /repos/{owner}/{repo}` - Basic stats (stars, forks, watchers)
+- `GET /repos/{owner}/{repo}/contributors` - Contributor list with commit counts
+- `GET /repos/{owner}/{repo}/stats/contributors` - Detailed contribution stats (additions/deletions per week)
+- `GET /repos/{owner}/{repo}/stats/commit_activity` - Weekly commit counts
+- `GET /repos/{owner}/{repo}/stats/participation` - Owner vs all commit activity
+- `GET /repos/{owner}/{repo}/languages` - Language breakdown
+
+**Leaderboard Ideas:**
+
+- 🏆 Top committers (last 30 days)
+- 📈 Most lines added
+- 🔥 Longest streak
+- 🐛 Most issues closed
+- 🔀 Most PRs merged
+
+**Caching Considerations:**
+
+- GitHub stats endpoints return 202 while computing (need retry logic)
+- Cache results for 1 hour to avoid rate limits
+- Consider storing in `repo_stats_cache` table
+
+**Display Format:**
+
+```text
+📊 **facebook/react** Statistics
+
+⭐ 220k stars  🍴 45k forks  👀 6.5k watchers
+📝 1,200 open issues  🔀 180 open PRs
+
+🏆 **Top Contributors (30 days)**
+1. @gaearon - 45 commits (+2,340 / -890)
+2. @acdlite - 38 commits (+1,200 / -450)
+3. @sebmarkbage - 22 commits (+890 / -320)
+
+📈 Activity: 156 commits this week (↑12% vs last week)
+```
 
 ## References
 
