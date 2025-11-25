@@ -139,11 +139,6 @@ describe("gh_issue handler - show single issue", () => {
   });
 
   test("should handle malformed repository names", async () => {
-    const error = new Error("GitHub API error: 400 Bad Request");
-    const getIssueSpy = spyOn(githubClient, "getIssue").mockRejectedValue(
-      error
-    );
-
     await handleGhIssue(mockHandler, {
       channelId: "test-channel",
       args: ["invalid-repo-name", "123"],
@@ -151,10 +146,8 @@ describe("gh_issue handler - show single issue", () => {
 
     expect(mockHandler.sendMessage).toHaveBeenCalledWith(
       "test-channel",
-      "❌ Error: GitHub API error: 400 Bad Request"
+      '❌ Error: Invalid repository format: "invalid-repo-name". Expected "owner/repo".'
     );
-
-    getIssueSpy.mockRestore();
   });
 
   test("should format labels correctly with multiple labels", async () => {

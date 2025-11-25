@@ -4,9 +4,11 @@ import {
   classifyApiError,
   getPullRequest,
   listPullRequests,
+  validateRepo,
   type GitHubPullRequestList,
 } from "../api/github-client";
 import { formatPrDetail, formatPrList } from "../formatters/command-formatters";
+import { sendInstallPrompt } from "../github-app/installation-service";
 import type { GitHubOAuthService } from "../services/github-oauth-service";
 import type { SlashCommandEvent } from "../types/bot";
 import { parseCommandArgs, validatePrFilters } from "../utils/arg-parser";
@@ -76,11 +78,18 @@ async function handleShowPr(
           );
           return;
         } catch {
-          // User token also failed - they don't have access
-          await handler.sendMessage(
-            channelId,
-            `❌ You don't have access to this repository`
-          );
+          // Check if user has repo access
+          const hasAccess = await validateRepo(repo, userOctokit);
+          if (hasAccess) {
+            // User has access but PR doesn't exist
+            await handler.sendMessage(
+              channelId,
+              `❌ Pull request #${prNumber} not found in **${repo}**`
+            );
+          } else {
+            // User doesn't have access - show install prompt
+            await sendInstallPrompt(handler, channelId, repo);
+          }
           return;
         }
       }
@@ -157,11 +166,7 @@ async function handleListPrs(
           await sendPrList(handler, channelId, prs, repo);
           return;
         } catch {
-          // User token also failed - they don't have access
-          await handler.sendMessage(
-            channelId,
-            `❌ You don't have access to this repository`
-          );
+          await sendInstallPrompt(handler, channelId, repo);
           return;
         }
       }

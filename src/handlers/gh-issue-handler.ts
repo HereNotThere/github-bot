@@ -4,12 +4,14 @@ import {
   classifyApiError,
   getIssue,
   listIssues,
+  validateRepo,
   type GitHubIssueList,
 } from "../api/github-client";
 import {
   formatIssueDetail,
   formatIssueList,
 } from "../formatters/command-formatters";
+import { sendInstallPrompt } from "../github-app/installation-service";
 import type { GitHubOAuthService } from "../services/github-oauth-service";
 import type { SlashCommandEvent } from "../types/bot";
 import { parseCommandArgs, validateIssueFilters } from "../utils/arg-parser";
@@ -82,11 +84,18 @@ async function handleShowIssue(
           );
           return;
         } catch {
-          // User token also failed - they don't have access
-          await handler.sendMessage(
-            channelId,
-            `❌ You don't have access to this repository`
-          );
+          // Check if user has repo access
+          const hasAccess = await validateRepo(repo, userOctokit);
+          if (hasAccess) {
+            // User has access but issue doesn't exist
+            await handler.sendMessage(
+              channelId,
+              `❌ Issue #${issueNumber} not found in **${repo}**`
+            );
+          } else {
+            // User doesn't have access - show install prompt
+            await sendInstallPrompt(handler, channelId, repo);
+          }
           return;
         }
       }
@@ -168,11 +177,7 @@ async function handleListIssues(
           await sendIssueList(handler, channelId, actualIssues, repo);
           return;
         } catch {
-          // User token also failed - they don't have access
-          await handler.sendMessage(
-            channelId,
-            `❌ You don't have access to this repository`
-          );
+          await sendInstallPrompt(handler, channelId, repo);
           return;
         }
       }

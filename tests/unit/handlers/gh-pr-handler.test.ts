@@ -138,11 +138,6 @@ describe("gh_pr handler - show single PR", () => {
   });
 
   test("should handle malformed repository names", async () => {
-    const error = new Error("GitHub API error: 400 Bad Request");
-    const getPRSpy = spyOn(githubClient, "getPullRequest").mockRejectedValue(
-      error
-    );
-
     await handleGhPr(mockHandler, {
       channelId: "test-channel",
       args: ["invalid-repo-name", "123"],
@@ -150,10 +145,8 @@ describe("gh_pr handler - show single PR", () => {
 
     expect(mockHandler.sendMessage).toHaveBeenCalledWith(
       "test-channel",
-      "❌ Error: GitHub API error: 400 Bad Request"
+      '❌ Error: Invalid repository format: "invalid-repo-name". Expected "owner/repo".'
     );
-
-    getPRSpy.mockRestore();
   });
 
   test("should strip markdown bold formatting from repo name", async () => {
