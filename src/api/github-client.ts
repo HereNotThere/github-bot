@@ -38,6 +38,11 @@ export function classifyApiError(error: unknown): GitHubApiErrorType {
 
 export function parseRepo(repoFullName: string): [owner: string, repo: string] {
   const [owner, repo] = repoFullName.split("/");
+  if (!owner || !repo) {
+    throw new Error(
+      `Invalid repository format: "${repoFullName}". Expected "owner/repo".`
+    );
+  }
   return [owner, repo];
 }
 
