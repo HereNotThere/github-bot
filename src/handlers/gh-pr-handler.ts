@@ -4,6 +4,7 @@ import {
   classifyApiError,
   getPullRequest,
   listPullRequests,
+  validateRepo,
   type GitHubPullRequestList,
 } from "../api/github-client";
 import { formatPrDetail, formatPrList } from "../formatters/command-formatters";
@@ -77,7 +78,18 @@ async function handleShowPr(
           );
           return;
         } catch {
-          await sendInstallPrompt(handler, channelId, repo);
+          // Check if user has repo access
+          const hasAccess = await validateRepo(repo, userOctokit);
+          if (hasAccess) {
+            // User has access but PR doesn't exist
+            await handler.sendMessage(
+              channelId,
+              `❌ Pull request #${prNumber} not found in **${repo}**`
+            );
+          } else {
+            // User doesn't have access - show install prompt
+            await sendInstallPrompt(handler, channelId, repo);
+          }
           return;
         }
       }
