@@ -69,6 +69,8 @@ export class GitHubOAuthService {
   private githubApp: GitHubApp;
   private redirectUrl: string;
   private encryptionKey: Buffer;
+  /** In-flight refresh promises to prevent concurrent refresh race conditions */
+  private refreshPromises = new Map<string, Promise<string | null>>();
 
   constructor(githubApp: GitHubApp) {
     this.githubApp = githubApp;
@@ -398,12 +400,36 @@ export class GitHubOAuthService {
 
   /**
    * Refresh an expired access token using the refresh token.
-   * GitHub access tokens expire after 8 hours, refresh tokens after 6 months.
+   * Uses in-flight promise deduplication to prevent race conditions when
+   * multiple concurrent requests detect an expired token simultaneously.
    *
    * @param townsUserId - Towns user ID
    * @returns New access token or null if refresh failed
    */
   private async refreshAccessToken(
+    townsUserId: string
+  ): Promise<string | null> {
+    // If a refresh is already in progress for this user, wait for it
+    const existingPromise = this.refreshPromises.get(townsUserId);
+    if (existingPromise) {
+      return existingPromise;
+    }
+
+    const refreshPromise = this.doRefreshAccessToken(townsUserId);
+    this.refreshPromises.set(townsUserId, refreshPromise);
+
+    try {
+      return await refreshPromise;
+    } finally {
+      this.refreshPromises.delete(townsUserId);
+    }
+  }
+
+  /**
+   * Actual token refresh logic.
+   * GitHub access tokens expire after 8 hours, refresh tokens after 6 months.
+   */
+  private async doRefreshAccessToken(
     townsUserId: string
   ): Promise<string | null> {
     const tokenData = await this.getUserToken(townsUserId);
