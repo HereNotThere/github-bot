@@ -295,6 +295,60 @@ Implemented in `InstallationService`:
 - Completes pending subscriptions for private repos
 - Sends notification to affected channels
 
+## Query Command Flow
+
+### `/gh_pr` and `/gh_issue` for Private Repos
+
+Query commands require **2 invocations** for private repos (vs 1 for public):
+
+```text
+/gh_pr owner/repo #123
+  ↓
+User has OAuth token?
+  ├─ No → Show editable OAuth prompt → User authorizes → Callback
+  │         ↓
+  │       OAuth Success → Edit message to "✅ GitHub connected"
+  │         ↓
+  │       Check if GitHub App installed on repo
+  │         ├─ Installed → Show success page
+  │         └─ Not installed → Show "Installation Required" page
+  │                              Auto-redirect to GitHub App install (3s)
+  │                              ↓
+  │                            User installs app → Returns to Towns
+  │
+  └─ Yes → Check if GitHub App installed
+              ├─ Installed → Fetch and display result
+              └─ Not installed → Show install prompt
+```
+
+**Second invocation after OAuth + install:**
+```text
+/gh_pr owner/repo #123
+  ↓
+OAuth token valid ✓
+GitHub App installed ✓
+  ↓
+Fetch and display result → SUCCESS
+```
+
+**Key differences from subscriptions:**
+- Query commands cannot be "pended" and auto-completed by webhooks
+- Results must be returned synchronously to the user
+- Users must re-run the command after OAuth + install complete
+
+### OAuth State for Query Commands
+
+```json
+{
+  "action": "query",
+  "townsUserId": "0x...",
+  "spaceId": "...",
+  "channelId": "...",
+  "repo": "owner/repo",
+  "messageEventId": "..." // For editing the OAuth prompt message
+}
+```
+
 ## Configuration
 
 > **See `CONTRIBUTING.md` for complete environment variables reference.**

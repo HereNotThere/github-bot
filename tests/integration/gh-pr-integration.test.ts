@@ -89,14 +89,16 @@ describe("gh_pr handler - Integration", () => {
       mockOAuthService
     );
 
+    // sendEditableOAuthPrompt sends a preliminary message, then edits it
     expect(mockHandler.sendMessage).toHaveBeenCalledTimes(1);
+    expect(mockHandler.editMessage).toHaveBeenCalledTimes(1);
 
-    const [, message] = mockHandler.sendMessage.mock.calls[0];
+    const [, , message] = mockHandler.editMessage.mock.calls[0];
 
-    // Should get a proper error message or OAuth prompt
-    expect(message).toMatch(/❌|🔐/);
+    // Should get OAuth prompt (🔐) since bot token can't access this
+    expect(message).toMatch(/🔐/);
 
-    console.log("\n❌ Error message for non-existent PR:");
+    console.log("\n🔐 OAuth prompt for non-existent PR:");
     console.log(message);
   }, 10000);
 
@@ -122,14 +124,16 @@ describe("gh_pr handler - Integration", () => {
       mockOAuthService
     );
 
+    // sendEditableOAuthPrompt sends a preliminary message, then edits it
     expect(mockHandler.sendMessage).toHaveBeenCalledTimes(1);
+    expect(mockHandler.editMessage).toHaveBeenCalledTimes(1);
 
-    const [, message] = mockHandler.sendMessage.mock.calls[0];
+    const [, , message] = mockHandler.editMessage.mock.calls[0];
 
-    // Should get a proper error message or OAuth prompt
-    expect(message).toMatch(/❌|🔐/);
+    // Should get OAuth prompt (🔐) since bot token can't access this
+    expect(message).toMatch(/🔐/);
 
-    console.log("\n❌ Error message for invalid repo:");
+    console.log("\n🔐 OAuth prompt for invalid repo:");
     console.log(message);
   }, 10000);
 });
