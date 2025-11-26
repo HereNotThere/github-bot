@@ -1,10 +1,7 @@
 import type { BotHandler } from "@towns-protocol/bot";
 
-import type {
-  GitHubOAuthService,
-  RedirectAction,
-  RedirectData,
-} from "../services/github-oauth-service";
+import type { GitHubOAuthService } from "../services/github-oauth-service";
+import type { RedirectAction, RedirectData } from "../types/oauth";
 
 /**
  * Send OAuth prompt for query commands (gh_pr, gh_issue)

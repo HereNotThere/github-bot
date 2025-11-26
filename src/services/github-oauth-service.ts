@@ -12,16 +12,12 @@ import { OAUTH_TOKEN_REFRESH_BUFFER_MS } from "../constants";
 import { db } from "../db";
 import { githubUserTokens, oauthStates } from "../db/schema";
 import { GitHubApp } from "../github-app/app";
-
-/** Supported redirect actions after OAuth completion */
-export type RedirectAction = "subscribe" | "query";
-
-/** Redirect data passed through OAuth state */
-export interface RedirectData {
-  repo: string;
-  eventTypes?: string; // Only used by "subscribe" action
-  messageEventId?: string; // Populated by sendEditableOAuthPrompt
-}
+import {
+  RedirectActionSchema,
+  RedirectDataSchema,
+  type RedirectAction,
+  type RedirectData,
+} from "../types/oauth";
 
 /**
  * Result returned from handleCallback after OAuth completion
@@ -29,7 +25,7 @@ export interface RedirectData {
 export interface OAuthCallbackResult {
   townsUserId: string;
   channelId: string;
-  spaceId: string | null;
+  spaceId: string;
   redirectAction: RedirectAction | null;
   redirectData: RedirectData | null;
   githubLogin: string;
@@ -244,15 +240,21 @@ export class GitHubOAuthService {
     // Clean up used state
     await db.delete(oauthStates).where(eq(oauthStates.state, state));
 
+    // Validate redirect data from database
+    const actionResult = RedirectActionSchema.safeParse(
+      stateData.redirectAction
+    );
+    const dataResult = stateData.redirectData
+      ? RedirectDataSchema.safeParse(JSON.parse(stateData.redirectData))
+      : null;
+
     // Return state data for redirect handling
     return {
       townsUserId: stateData.townsUserId,
       channelId: stateData.channelId,
       spaceId: stateData.spaceId,
-      redirectAction: stateData.redirectAction as RedirectAction | null,
-      redirectData: stateData.redirectData
-        ? (JSON.parse(stateData.redirectData) as RedirectData)
-        : null,
+      redirectAction: actionResult.success ? actionResult.data : null,
+      redirectData: dataResult?.success ? dataResult.data : null,
       githubLogin: user.login,
     };
   }
