@@ -12,7 +12,7 @@ import { sendInstallPrompt } from "../github-app/installation-service";
 import type { GitHubOAuthService } from "../services/github-oauth-service";
 import type { SlashCommandEvent } from "../types/bot";
 import { parseCommandArgs, validatePrFilters } from "../utils/arg-parser";
-import { sendOAuthPrompt } from "../utils/oauth-helpers";
+import { sendQueryOAuthPrompt } from "../utils/oauth-helpers";
 import { stripMarkdown } from "../utils/stripper";
 
 export async function handleGhPr(
@@ -94,8 +94,15 @@ async function handleShowPr(
         }
       }
 
-      // No OAuth token - show connection prompt
-      await sendOAuthPrompt(oauthService, handler, userId, channelId, spaceId);
+      // No OAuth token - show connection prompt with repo context
+      await sendQueryOAuthPrompt(
+        oauthService,
+        handler,
+        userId,
+        channelId,
+        spaceId,
+        repo
+      );
       return;
     }
 
@@ -171,8 +178,15 @@ async function handleListPrs(
         }
       }
 
-      // No OAuth token - show connection prompt
-      await sendOAuthPrompt(oauthService, handler, userId, channelId, spaceId);
+      // No OAuth token - show connection prompt with repo context
+      await sendQueryOAuthPrompt(
+        oauthService,
+        handler,
+        userId,
+        channelId,
+        spaceId,
+        repo
+      );
       return;
     }
 

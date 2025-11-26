@@ -196,7 +196,13 @@ app.get("/.well-known/agent-metadata.json", async c => {
 
 // OAuth callback endpoint
 app.get("/oauth/callback", c =>
-  handleOAuthCallback(c, oauthService, subscriptionService, bot)
+  handleOAuthCallback(
+    c,
+    oauthService,
+    subscriptionService,
+    bot,
+    installationService
+  )
 );
 
 // GitHub App webhook endpoint

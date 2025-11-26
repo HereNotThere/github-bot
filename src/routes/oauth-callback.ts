@@ -1,6 +1,11 @@
 import type { Context } from "hono";
 
+import { getOwnerIdFromUsername, parseRepo } from "../api/github-client";
 import { DEFAULT_EVENT_TYPES } from "../constants";
+import {
+  generateInstallUrl,
+  type InstallationService,
+} from "../github-app/installation-service";
 import type { GitHubOAuthService } from "../services/github-oauth-service";
 import type { SubscriptionService } from "../services/subscription-service";
 import type { TownsBot } from "../types/bot";
@@ -17,7 +22,8 @@ export async function handleOAuthCallback(
   c: Context,
   oauthService: GitHubOAuthService,
   subscriptionService: SubscriptionService,
-  bot: TownsBot
+  bot: TownsBot,
+  installationService: InstallationService
 ) {
   const code = c.req.query("code");
   const state = c.req.query("state");
@@ -109,6 +115,28 @@ export async function handleOAuthCallback(
           });
         }
       }
+    }
+
+    // Handle query command redirect (gh_pr, gh_issue)
+    // Check if app installation is needed for the repo
+    if (result.redirectAction === "query" && result.redirectData?.repo) {
+      const repo = result.redirectData.repo;
+      const installationId = await installationService.isRepoInstalled(repo);
+
+      if (!installationId) {
+        // App not installed - show installation required page with auto-redirect
+        const [owner] = parseRepo(repo);
+        const ownerId = await getOwnerIdFromUsername(owner);
+        const installUrl = generateInstallUrl(ownerId);
+
+        return renderSuccess(c, {
+          action: "query",
+          requiresInstallation: true,
+          repoFullName: repo,
+          installUrl,
+        });
+      }
+      // App installed - just show success page, user can run command again
     }
 
     return renderSuccess(c);

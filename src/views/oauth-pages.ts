@@ -6,35 +6,56 @@ import { escapeHtml } from "../utils/html-escape";
 // Towns logo served as static asset
 const TOWNS_LOGO = "/assets/Towns-rainbow.png";
 
+/** Query action data for install required page */
+interface QueryInstallData {
+  action: "query";
+  requiresInstallation: true;
+  repoFullName: string;
+  installUrl: string;
+}
+
+/** Subscribe action data */
+interface SubscribeActionData {
+  action: "subscribe";
+  subscriptionResult: SubscribeResult;
+}
+
+/** Render success data - union of different action types */
+type RenderSuccessData =
+  | SubscribeActionData
+  | QueryInstallData
+  | { action?: undefined };
+
 /**
  * Render success page after OAuth completion - Main dispatcher
  */
-export function renderSuccess(
-  c: Context,
-  data?: {
-    action?: string;
-    subscriptionResult?: SubscribeResult;
-  }
-) {
-  if (!data?.subscriptionResult) {
-    return renderOAuthOnlySuccess(c);
+export function renderSuccess(c: Context, data?: RenderSuccessData) {
+  // Handle query action with install required
+  if (data?.action === "query") {
+    return renderQueryInstallRequired(c, data);
   }
 
-  const sub = data.subscriptionResult;
+  // Handle subscribe action
+  if (data?.action === "subscribe") {
+    const sub = data.subscriptionResult;
 
-  if (!sub.success && sub.requiresInstallation) {
-    return renderInstallRequired(c, sub);
+    if (!sub.success && sub.requiresInstallation) {
+      return renderInstallRequired(c, sub);
+    }
+
+    if (sub.success && sub.deliveryMode === "webhook") {
+      return renderWebhookSuccess(c, sub);
+    }
+
+    if (sub.success && sub.deliveryMode === "polling") {
+      return renderPollingSuccess(c, sub);
+    }
+
+    return renderSubscriptionError(c, sub);
   }
 
-  if (sub.success && sub.deliveryMode === "webhook") {
-    return renderWebhookSuccess(c, sub);
-  }
-
-  if (sub.success && sub.deliveryMode === "polling") {
-    return renderPollingSuccess(c, sub);
-  }
-
-  return renderSubscriptionError(c, sub);
+  // No action - OAuth-only success
+  return renderOAuthOnlySuccess(c);
 }
 
 /**
@@ -59,6 +80,52 @@ function renderOAuthOnlySuccess(c: Context) {
           <p>Your GitHub account has been connected.</p>
           <p>You can close this window and return to Towns.</p>
         </div>
+      </body>
+    </html>
+  `);
+}
+
+/**
+ * Query command requires GitHub App installation (OAuth succeeded)
+ */
+function renderQueryInstallRequired(c: Context, data: QueryInstallData) {
+  const safeRepo = escapeHtml(data.repoFullName);
+  const safeInstallUrl = escapeHtml(data.installUrl);
+
+  return c.html(`
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Installation Required</title>
+        ${renderStyles()}
+      </head>
+      <body>
+        <div class="container">
+          <div class="logo-header">
+            <img src="${TOWNS_LOGO}" alt="Towns Protocol" class="logo" />
+          </div>
+          <h1>✅ GitHub Connected</h1>
+          <p class="repo-name">Repository: <strong>${safeRepo}</strong></p>
+          <p>This private repository requires the GitHub App to be installed for full access.</p>
+          <p>Click the button below to install the app.</p>
+          <a href="${safeInstallUrl}" class="install-button">Install GitHub App</a>
+          <p class="note">After installation, return to Towns and run your command again.</p>
+          <p class="redirect-info">Redirecting in <span id="countdown">3</span> seconds...</p>
+        </div>
+        <script>
+          let countdown = 3;
+          const countdownEl = document.getElementById('countdown');
+          const interval = setInterval(() => {
+            countdown--;
+            if (countdownEl) countdownEl.textContent = String(countdown);
+            if (countdown === 0) {
+              clearInterval(interval);
+              window.location.href = ${JSON.stringify(data.installUrl)};
+            }
+          }, 1000);
+        </script>
       </body>
     </html>
   `);
@@ -93,7 +160,7 @@ function renderInstallRequired(
           <p>This private repository requires the GitHub App to be installed.</p>
           <p>Click the button below to install the app and enable subscription.</p>
           <a href="${safeInstallUrl}" class="install-button">Install GitHub App</a>
-          <p class="note">After installation, return to Towns and run <code>/github subscribe ${safeRepo}</code> again.</p>
+          <p class="note">After installation, return to Towns. Your subscription will be activated automatically.</p>
           <p class="redirect-info">Redirecting in <span id="countdown">3</span> seconds...</p>
         </div>
         <script>

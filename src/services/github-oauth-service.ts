@@ -12,15 +12,12 @@ import { OAUTH_TOKEN_REFRESH_BUFFER_MS } from "../constants";
 import { db } from "../db";
 import { githubUserTokens, oauthStates } from "../db/schema";
 import { GitHubApp } from "../github-app/app";
-
-/**
- * Redirect data for subscription action
- */
-export interface SubscriptionRedirectData {
-  repo: string;
-  eventTypes?: string;
-  messageEventId?: string; // Optional eventId for editing OAuth prompt message
-}
+import {
+  RedirectActionSchema,
+  RedirectDataSchema,
+  type RedirectAction,
+  type RedirectData,
+} from "../types/oauth";
 
 /**
  * Result returned from handleCallback after OAuth completion
@@ -28,9 +25,9 @@ export interface SubscriptionRedirectData {
 export interface OAuthCallbackResult {
   townsUserId: string;
   channelId: string;
-  spaceId: string | null;
-  redirectAction: string | null;
-  redirectData: SubscriptionRedirectData | null;
+  spaceId: string;
+  redirectAction: RedirectAction | null;
+  redirectData: RedirectData | null;
   githubLogin: string;
 }
 
@@ -111,8 +108,8 @@ export class GitHubOAuthService {
     townsUserId: string,
     channelId: string,
     spaceId: string,
-    redirectAction?: string,
-    redirectData?: SubscriptionRedirectData
+    redirectAction?: RedirectAction,
+    redirectData?: RedirectData
   ): Promise<string> {
     // Generate secure state token
     const state = randomBytes(32).toString("hex");
@@ -196,6 +193,12 @@ export class GitHubOAuthService {
       ? this.encryptToken(authentication.refreshToken)
       : null;
 
+    // Auto-transfer: If this GitHub account is linked to a different Towns user, remove that link first
+    // This allows the same GitHub account to be re-linked to a new Towns user
+    await db
+      .delete(githubUserTokens)
+      .where(eq(githubUserTokens.githubUserId, user.id));
+
     // Store or update user token
     const now = new Date();
     await db
@@ -237,15 +240,21 @@ export class GitHubOAuthService {
     // Clean up used state
     await db.delete(oauthStates).where(eq(oauthStates.state, state));
 
+    // Validate redirect data from database
+    const actionResult = RedirectActionSchema.safeParse(
+      stateData.redirectAction
+    );
+    const dataResult = stateData.redirectData
+      ? RedirectDataSchema.safeParse(JSON.parse(stateData.redirectData))
+      : null;
+
     // Return state data for redirect handling
     return {
       townsUserId: stateData.townsUserId,
       channelId: stateData.channelId,
       spaceId: stateData.spaceId,
-      redirectAction: stateData.redirectAction,
-      redirectData: stateData.redirectData
-        ? JSON.parse(stateData.redirectData)
-        : null,
+      redirectAction: actionResult.success ? actionResult.data : null,
+      redirectData: dataResult?.success ? dataResult.data : null,
       githubLogin: user.login,
     };
   }
