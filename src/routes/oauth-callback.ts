@@ -67,18 +67,21 @@ export async function handleOAuthCallback(
         ];
 
         // Attempt subscription now that OAuth is complete
+        const branchFilter = redirectData.branchFilter ?? null;
         const subResult = await subscriptionService.createSubscription({
           townsUserId,
           spaceId,
           channelId,
           repoIdentifier: redirectData.repo,
           eventTypes,
+          branchFilter,
         });
 
         if (subResult.success) {
           await subscriptionService.sendSubscriptionSuccess(
             subResult,
             eventTypes,
+            branchFilter,
             channelId,
             bot
           );
@@ -113,19 +116,27 @@ export async function handleOAuthCallback(
           ...DEFAULT_EVENT_TYPES_ARRAY,
         ];
 
-        const updateResult = await subscriptionService.addEventTypes(
+        const updateResult = await subscriptionService.updateSubscription(
           townsUserId,
           spaceId,
           channelId,
           redirectData.repo,
-          eventTypes
+          eventTypes,
+          redirectData.branchFilter ?? null
         );
 
         if (updateResult.success) {
+          const branchInfo =
+            updateResult.branchFilter === null
+              ? "default branch"
+              : updateResult.branchFilter === "all"
+                ? "all branches"
+                : updateResult.branchFilter;
           await bot.sendMessage(
             channelId,
             `✅ **Updated subscription to ${redirectData.repo}**\n\n` +
-              `Event types: **${updateResult.eventTypes!.join(", ")}**`
+              `Events: **${updateResult.eventTypes!.join(", ")}**\n` +
+              `Branches: **${branchInfo}**`
           );
         } else {
           await bot.sendMessage(channelId, `❌ ${updateResult.error}`);
