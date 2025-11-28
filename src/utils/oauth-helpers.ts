@@ -169,5 +169,10 @@ export async function handleInvalidOAuthToken(
       );
       return;
     }
+
+    default: {
+      const _exhaustive: never = tokenStatus;
+      console.error("Unhandled token status:", _exhaustive);
+    }
   }
 }
