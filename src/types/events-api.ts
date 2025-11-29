@@ -71,6 +71,7 @@ export const PullRequestPayloadSchema = z.object({
         })
         .optional(),
       merged: z.boolean().optional(),
+      base: z.object({ ref: z.string() }).optional(),
     })
     .optional(),
 });
