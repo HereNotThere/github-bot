@@ -8,10 +8,6 @@ export async function handleGitHubWebhook(
   githubApp: GitHubApp,
   webhookProcessor: WebhookProcessor
 ) {
-  if (!githubApp.isEnabled()) {
-    return c.json({ error: "GitHub App not configured" }, 503);
-  }
-
   const deliveryId = c.req.header("x-github-delivery");
   const signature = c.req.header("x-hub-signature-256");
   const event = c.req.header("x-github-event");

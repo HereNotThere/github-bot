@@ -62,72 +62,68 @@ const pollingService = new PollingService(
   5 * 60 * 1000
 );
 
-// Register webhook event handlers (only if GitHub App is configured)
-if (githubApp.isEnabled()) {
-  githubApp.webhooks.on("installation", async ({ payload }) => {
-    if (payload.action === "created") {
-      await installationService.onInstallationCreated(payload);
-    } else if (payload.action === "deleted") {
-      await installationService.onInstallationDeleted(payload);
-    }
-  });
+// Register webhook event handlers
+githubApp.webhooks.on("installation", async ({ payload }) => {
+  if (payload.action === "created") {
+    await installationService.onInstallationCreated(payload);
+  } else if (payload.action === "deleted") {
+    await installationService.onInstallationDeleted(payload);
+  }
+});
 
-  githubApp.webhooks.on("installation_repositories", async ({ payload }) => {
-    if (payload.action === "added") {
-      await installationService.onRepositoriesAdded(payload);
-    } else if (payload.action === "removed") {
-      await installationService.onRepositoriesRemoved(payload);
-    }
-  });
+githubApp.webhooks.on("installation_repositories", async ({ payload }) => {
+  if (payload.action === "added") {
+    await installationService.onRepositoriesAdded(payload);
+  } else if (payload.action === "removed") {
+    await installationService.onRepositoriesRemoved(payload);
+  }
+});
 
-  githubApp.webhooks.on("pull_request", async ({ payload }) => {
-    await eventProcessor.onPullRequest(payload);
-  });
+githubApp.webhooks.on("pull_request", async ({ payload }) => {
+  await eventProcessor.onPullRequest(payload);
+});
 
-  githubApp.webhooks.on("push", async ({ payload }) => {
-    await eventProcessor.onPush(payload);
-  });
+githubApp.webhooks.on("push", async ({ payload }) => {
+  await eventProcessor.onPush(payload);
+});
 
-  githubApp.webhooks.on("issues", async ({ payload }) => {
-    await eventProcessor.onIssues(payload);
-  });
+githubApp.webhooks.on("issues", async ({ payload }) => {
+  await eventProcessor.onIssues(payload);
+});
 
-  githubApp.webhooks.on("release", async ({ payload }) => {
-    await eventProcessor.onRelease(payload);
-  });
+githubApp.webhooks.on("release", async ({ payload }) => {
+  await eventProcessor.onRelease(payload);
+});
 
-  githubApp.webhooks.on("workflow_run", async ({ payload }) => {
-    await eventProcessor.onWorkflowRun(payload);
-  });
+githubApp.webhooks.on("workflow_run", async ({ payload }) => {
+  await eventProcessor.onWorkflowRun(payload);
+});
 
-  githubApp.webhooks.on("issue_comment", async ({ payload }) => {
-    await eventProcessor.onIssueComment(payload);
-  });
+githubApp.webhooks.on("issue_comment", async ({ payload }) => {
+  await eventProcessor.onIssueComment(payload);
+});
 
-  githubApp.webhooks.on("pull_request_review", async ({ payload }) => {
-    await eventProcessor.onPullRequestReview(payload);
-  });
+githubApp.webhooks.on("pull_request_review", async ({ payload }) => {
+  await eventProcessor.onPullRequestReview(payload);
+});
 
-  githubApp.webhooks.on("create", async ({ payload }) => {
-    await eventProcessor.onBranchEvent(payload, "create");
-  });
+githubApp.webhooks.on("create", async ({ payload }) => {
+  await eventProcessor.onBranchEvent(payload, "create");
+});
 
-  githubApp.webhooks.on("delete", async ({ payload }) => {
-    await eventProcessor.onBranchEvent(payload, "delete");
-  });
+githubApp.webhooks.on("delete", async ({ payload }) => {
+  await eventProcessor.onBranchEvent(payload, "delete");
+});
 
-  githubApp.webhooks.on("fork", async ({ payload }) => {
-    await eventProcessor.onFork(payload);
-  });
+githubApp.webhooks.on("fork", async ({ payload }) => {
+  await eventProcessor.onFork(payload);
+});
 
-  githubApp.webhooks.on("watch", async ({ payload }) => {
-    await eventProcessor.onWatch(payload);
-  });
+githubApp.webhooks.on("watch", async ({ payload }) => {
+  await eventProcessor.onWatch(payload);
+});
 
-  console.log("✅ GitHub App webhooks registered");
-} else {
-  console.log("⚠️  GitHub App not configured - running in polling-only mode");
-}
+console.log("✅ GitHub App webhooks registered");
 
 // ============================================================================
 // SLASH COMMAND HANDLERS
@@ -215,20 +211,16 @@ app.post("/github-webhook", c =>
 app.get("/health", async c => {
   const repos = await subscriptionService.getAllSubscribedRepos();
 
-  // Get GitHub App installation count if enabled
-  let installationCount = 0;
-  if (githubApp.isEnabled()) {
-    const installations = await db.select().from(githubInstallations);
-    installationCount = installations.length;
-  }
+  // Get GitHub App installation count
+  const installations = await db.select().from(githubInstallations);
 
   return c.json({
     status: "ok",
     subscribed_repos: repos.length,
     polling_active: true,
     github_app: {
-      configured: githubApp.isEnabled(),
-      installations: installationCount,
+      configured: true,
+      installations: installations.length,
     },
   });
 });

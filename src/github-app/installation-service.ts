@@ -251,10 +251,6 @@ export class InstallationService {
     repo: string
   ): Promise<number | null> {
     try {
-      if (!this.githubApp.isEnabled()) {
-        return null;
-      }
-
       const octokit = this.githubApp.getAppOctokit();
       const { data } = await octokit.request(
         "GET /repos/{owner}/{repo}/installation",
@@ -381,10 +377,6 @@ export class InstallationService {
     );
 
     try {
-      if (!this.githubApp.isEnabled()) {
-        throw new Error("GitHub App not configured");
-      }
-
       // Use app-authenticated Octokit (JWT) for app-level endpoint
       const octokit = this.githubApp.getAppOctokit();
       const { data: installation } = await octokit.request(

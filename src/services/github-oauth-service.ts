@@ -128,12 +128,7 @@ export class GitHubOAuthService {
     });
 
     // Use Octokit's OAuth to generate authorization URL
-    const oauth = this.githubApp.getOAuth();
-    if (!oauth) {
-      throw new Error("OAuth not configured");
-    }
-
-    const { url } = oauth.getWebFlowAuthorizationUrl({
+    const { url } = this.githubApp.getOAuth().getWebFlowAuthorizationUrl({
       state,
       redirectUrl: this.redirectUrl,
     });
@@ -172,10 +167,6 @@ export class GitHubOAuthService {
 
     // Exchange code for token using Octokit
     const oauth = this.githubApp.getOAuth();
-    if (!oauth) {
-      throw new Error("OAuth not configured");
-    }
-
     const { authentication } = await oauth.createToken({
       code,
       state,
@@ -338,10 +329,7 @@ export class GitHubOAuthService {
 
     // Revoke token on GitHub (optional - token will be invalidated anyway)
     try {
-      const oauth = this.githubApp.getOAuth();
-      if (oauth) {
-        await oauth.deleteToken({ token: token.accessToken });
-      }
+      await this.githubApp.getOAuth().deleteToken({ token: token.accessToken });
     } catch (error) {
       console.error("Failed to revoke token on GitHub:", error);
       // Continue with local deletion even if revocation fails
@@ -456,13 +444,10 @@ export class GitHubOAuthService {
     }
 
     try {
-      const oauth = this.githubApp.getOAuth();
-      if (!oauth) {
-        throw new Error("OAuth not configured");
-      }
-
       // Use Octokit's refreshToken method
-      const { authentication } = await oauth.refreshToken({ refreshToken });
+      const { authentication } = await this.githubApp
+        .getOAuth()
+        .refreshToken({ refreshToken });
 
       // Update stored tokens
       await db

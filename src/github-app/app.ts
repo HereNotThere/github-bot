@@ -20,16 +20,17 @@ export class GitHubApp {
     const clientSecret = process.env.GITHUB_APP_CLIENT_SECRET;
     const webhookSecret = process.env.GITHUB_WEBHOOK_SECRET;
 
-    // Check if GitHub App is configured
-    if (!appId || !privateKeyBase64 || !webhookSecret) {
-      console.warn("GitHub App not configured - webhook mode disabled");
-      console.warn(
-        "Set GITHUB_APP_ID, GITHUB_APP_PRIVATE_KEY_BASE64, and GITHUB_WEBHOOK_SECRET to enable"
+    // Require GitHub App configuration
+    if (
+      !appId ||
+      !privateKeyBase64 ||
+      !clientId ||
+      !clientSecret ||
+      !webhookSecret
+    ) {
+      throw new Error(
+        "GitHub App not configured. Set GITHUB_APP_ID, GITHUB_APP_PRIVATE_KEY_BASE64, GITHUB_APP_CLIENT_ID, GITHUB_APP_CLIENT_SECRET, and GITHUB_WEBHOOK_SECRET"
       );
-      // Create dummy instances to avoid errors
-      this.app = null as any;
-      this.webhooks = null as any;
-      return;
     }
 
     // Decode base64 private key
@@ -39,13 +40,7 @@ export class GitHubApp {
     this.app = new App({
       appId,
       privateKey,
-      oauth:
-        clientId && clientSecret
-          ? {
-              clientId,
-              clientSecret,
-            }
-          : undefined,
+      oauth: { clientId, clientSecret },
     });
 
     // Initialize Webhooks handler
@@ -67,27 +62,13 @@ export class GitHubApp {
    * @returns JWT-authenticated Octokit instance
    */
   getAppOctokit(): Octokit {
-    if (!this.app) {
-      throw new Error("GitHub App not configured");
-    }
     return this.app.octokit;
   }
 
   /**
-   * Check if GitHub App is configured and enabled
-   */
-  isEnabled(): boolean {
-    return this.app !== null && this.webhooks !== null;
-  }
-
-  /**
    * Get OAuth instance for user authentication
-   * Returns undefined if OAuth is not configured
    */
   getOAuth() {
-    if (!this.app) {
-      return undefined;
-    }
     return this.app.oauth;
   }
 }
