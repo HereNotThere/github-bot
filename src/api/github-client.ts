@@ -60,6 +60,20 @@ export async function validateRepo(
   }
 }
 
+/**
+ * Get repository info including default branch
+ * Used by polling service to cache default branch for branch filtering
+ */
+export async function getRepoInfo(
+  repoFullName: string,
+  userOctokit?: Octokit
+): Promise<{ defaultBranch: string }> {
+  const client = userOctokit || octokit;
+  const [owner, repo] = parseRepo(repoFullName);
+  const { data } = await client.repos.get({ owner, repo });
+  return { defaultBranch: data.default_branch };
+}
+
 export async function getIssue(
   repoFullName: string,
   issueNumber: string,

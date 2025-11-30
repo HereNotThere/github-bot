@@ -1,0 +1,1 @@
+ALTER TABLE "repo_polling_state" ADD COLUMN "default_branch" text;

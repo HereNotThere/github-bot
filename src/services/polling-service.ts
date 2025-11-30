@@ -3,13 +3,16 @@ import { eq } from "drizzle-orm";
 import {
   fetchRepoEvents,
   getPullRequest,
+  getRepoInfo,
   type GitHubPullRequest,
 } from "../api/github-client";
 import type { EventType } from "../constants";
 import { db } from "../db";
 import { repoPollingState } from "../db/schema";
 import { formatEvent } from "../formatters/events-api";
+import { matchesBranchFilter } from "../github-app/event-processor";
 import type { TownsBot } from "../types/bot";
+import type { GitHubEvent } from "../types/events-api";
 import { validateGitHubEvent } from "../types/events-api";
 import type { SubscriptionService } from "./subscription-service";
 
@@ -51,6 +54,7 @@ export class PollingService {
     etag?: string;
     lastEventId?: string;
     lastPolledAt?: Date;
+    defaultBranch?: string;
   } | null> {
     const results = await db
       .select()
@@ -67,6 +71,7 @@ export class PollingService {
       etag: state.etag ?? undefined,
       lastEventId: state.lastEventId ?? undefined,
       lastPolledAt: state.lastPolledAt ?? undefined,
+      defaultBranch: state.defaultBranch ?? undefined,
     };
   }
 
@@ -79,6 +84,7 @@ export class PollingService {
       etag?: string;
       lastEventId?: string;
       lastPolledAt?: Date;
+      defaultBranch?: string;
     }
   ): Promise<void> {
     const existing = await db
@@ -94,6 +100,7 @@ export class PollingService {
         etag: state.etag ?? null,
         lastEventId: state.lastEventId ?? null,
         lastPolledAt: state.lastPolledAt ?? null,
+        defaultBranch: state.defaultBranch ?? null,
         updatedAt: new Date(),
       });
     } else {
@@ -104,6 +111,7 @@ export class PollingService {
           etag: state.etag ?? existing[0].etag,
           lastEventId: state.lastEventId ?? existing[0].lastEventId,
           lastPolledAt: state.lastPolledAt ?? existing[0].lastPolledAt,
+          defaultBranch: state.defaultBranch ?? existing[0].defaultBranch,
           updatedAt: new Date(),
         })
         .where(eq(repoPollingState.repo, repo));
@@ -185,10 +193,23 @@ export class PollingService {
    * Poll a single repository for new events
    */
   private async pollRepo(repo: string): Promise<void> {
-    // Get polling state (ETag and last seen event ID)
+    // Get polling state (ETag, last seen event ID, default branch)
     const state = await this.getPollingState(repo);
     const etag = state?.etag;
     const lastEventId = state?.lastEventId;
+
+    // Fetch default branch if not cached
+    let defaultBranch = state?.defaultBranch;
+    if (!defaultBranch) {
+      try {
+        const repoInfo = await getRepoInfo(repo);
+        defaultBranch = repoInfo.defaultBranch;
+        await this.updatePollingState(repo, { defaultBranch });
+      } catch (error) {
+        console.error(`Failed to fetch default branch for ${repo}:`, error);
+        // Continue without branch filtering if we can't get default branch
+      }
+    }
 
     // Fetch events with ETag
     const result = await fetchRepoEvents(repo, etag);
@@ -285,9 +306,21 @@ export class PollingService {
 
         if (message) {
           // Filter channels based on their event type preferences
-          const channelsForEvent = channels.filter(channel =>
+          let channelsForEvent = channels.filter(channel =>
             isEventTypeMatch(event.type, channel.eventTypes)
           );
+
+          if (channelsForEvent.length === 0) continue;
+
+          // Apply branch filtering if we have a default branch
+          if (defaultBranch) {
+            const branch = getBranchFromEvent(validatedEvent, prDetailsMap);
+            if (branch) {
+              channelsForEvent = channelsForEvent.filter(channel =>
+                matchesBranchFilter(branch, channel.branchFilter, defaultBranch)
+              );
+            }
+          }
 
           if (channelsForEvent.length === 0) continue;
 
@@ -347,4 +380,58 @@ function isEventTypeMatch(
   }
 
   return false;
+}
+
+/**
+ * Extract branch name from a GitHub event
+ * Returns null for events that are not branch-specific
+ */
+function getBranchFromEvent(
+  event: GitHubEvent,
+  prDetailsMap: Map<number, GitHubPullRequest>
+): string | null {
+  switch (event.type) {
+    case "PushEvent":
+      // refs/heads/main -> main
+      return event.payload.ref?.replace("refs/heads/", "") ?? null;
+
+    case "PullRequestEvent":
+      // Use base branch from PR (target branch)
+      return event.payload.pull_request?.base?.ref ?? null;
+
+    case "CreateEvent":
+    case "DeleteEvent":
+      // Only return branch name for branch events (not tags)
+      if (event.payload.ref_type === "branch") {
+        return event.payload.ref ?? null;
+      }
+      return null;
+
+    case "WorkflowRunEvent":
+      return event.payload.workflow_run?.head_branch ?? null;
+
+    case "PullRequestReviewEvent":
+    case "PullRequestReviewCommentEvent": {
+      // Get PR number and look up in prDetailsMap
+      const prNumber = event.payload.pull_request?.number;
+      if (prNumber) {
+        const prDetails = prDetailsMap.get(prNumber);
+        if (prDetails) {
+          return prDetails.base.ref;
+        }
+      }
+      return null;
+    }
+
+    // These events are not branch-specific
+    case "IssuesEvent":
+    case "IssueCommentEvent":
+    case "ReleaseEvent":
+    case "WatchEvent":
+    case "ForkEvent":
+      return null;
+
+    default:
+      return null;
+  }
 }

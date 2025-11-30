@@ -118,6 +118,7 @@ export const repoPollingState = pgTable("repo_polling_state", {
   etag: text("etag"), // GitHub ETag for conditional requests
   lastEventId: text("last_event_id"), // Last seen event ID to avoid duplicates
   lastPolledAt: timestamp("last_polled_at", { withTimezone: true }),
+  defaultBranch: text("default_branch"), // Cached default branch for filtering
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
 });
 
