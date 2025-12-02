@@ -36,6 +36,77 @@ Query and subscribe to repositories using slash commands. See [Usage](#usage) se
 - **Channel-Based Subscriptions** - Each channel has independent subscriptions
 - **Persistent Storage** - PostgreSQL database with Drizzle ORM
 
+## Usage
+
+### Subscription Commands
+
+```bash
+# Subscribe to repository (first time: OAuth authentication required)
+/github subscribe owner/repo
+
+# Subscribe with specific event types
+/github subscribe owner/repo --events pr,issues,commits
+
+# View subscriptions
+/github status
+
+# Unsubscribe
+/github unsubscribe owner/repo
+```
+
+First-time subscriptions open an OAuth window; after authorization the callback immediately creates the subscription, posts the delivery mode back into Towns, and shows the success page with webhook vs. polling status.
+
+**Event types:** `pr`, `issues`, `commits`, `releases`, `ci`, `comments`, `reviews`, `branches`, `forks`, `stars`, `all`
+
+**Delivery modes:**
+
+- With GitHub App installed: Real-time webhooks (instant)
+- Without GitHub App: Polling mode (5-minute intervals)
+
+> Private repositories always require the GitHub App to be installed on the target repo or organization. Public repositories can fall back to polling until the installation is completed.
+
+### Query Commands
+
+```bash
+# Show single PR or issue
+/gh_pr owner/repo 123         # Summary view
+/gh_pr owner/repo #123 --full # Full description
+/gh_issue owner/repo 456      # Summary view
+/gh_issue owner/repo #456 --full # Full description
+
+# List recent PRs or issues
+/gh_pr list owner/repo 10                  # 10 most recent
+/gh_pr list owner/repo 5 --state=open      # Filter by state
+/gh_pr list owner/repo 10 --author=user    # Filter by author
+
+/gh_issue list owner/repo 10               # 10 most recent
+/gh_issue list owner/repo 5 --state=closed # Filter by state
+/gh_issue list owner/repo 10 --creator=user # Filter by creator
+```
+
+**Filters:** `--state=open|closed|merged|all`, `--author=username`, `--creator=username`
+
+## Supported GitHub Events
+
+### Webhook Events (Real-Time)
+
+- `pull_request` - Opened, closed, merged
+- `issues` - Opened, closed
+- `push` - Commits to branches
+- `release` - Published
+- `workflow_run` - CI/CD status
+- `issue_comment` - New comments
+- `pull_request_review` - PR reviews
+- `create` / `delete` - Branch/tag creation and deletion
+- `fork` - Repository forks
+- `watch` - Repository stars
+
+### Polling Events (5-Minute Intervals)
+
+All webhook events above, plus:
+
+- `pull_request_review_comment` - Review comments
+
 ## Setup
 
 ### 1. Prerequisites
@@ -128,77 +199,6 @@ The bot supports two delivery modes:
 - **Webhook mode** - Instant notifications (requires GitHub App installation)
 
 > **For GitHub App setup:** See `CONTRIBUTING.md` for detailed instructions on creating and configuring a GitHub App.
-
-## Usage
-
-### Subscription Commands
-
-```bash
-# Subscribe to repository (first time: OAuth authentication required)
-/github subscribe owner/repo
-
-# Subscribe with specific event types
-/github subscribe owner/repo --events pr,issues,commits
-
-# View subscriptions
-/github status
-
-# Unsubscribe
-/github unsubscribe owner/repo
-```
-
-First-time subscriptions open an OAuth window; after authorization the callback immediately creates the subscription, posts the delivery mode back into Towns, and shows the success page with webhook vs. polling status.
-
-**Event types:** `pr`, `issues`, `commits`, `releases`, `ci`, `comments`, `reviews`, `branches`, `forks`, `stars`, `all`
-
-**Delivery modes:**
-
-- With GitHub App installed: Real-time webhooks (instant)
-- Without GitHub App: Polling mode (5-minute intervals)
-
-> Private repositories always require the GitHub App to be installed on the target repo or organization. Public repositories can fall back to polling until the installation is completed.
-
-### Query Commands
-
-```bash
-# Show single PR or issue
-/gh_pr owner/repo 123         # Summary view
-/gh_pr owner/repo #123 --full # Full description
-/gh_issue owner/repo 456      # Summary view
-/gh_issue owner/repo #456 --full # Full description
-
-# List recent PRs or issues
-/gh_pr list owner/repo 10                  # 10 most recent
-/gh_pr list owner/repo 5 --state=open      # Filter by state
-/gh_pr list owner/repo 10 --author=user    # Filter by author
-
-/gh_issue list owner/repo 10               # 10 most recent
-/gh_issue list owner/repo 5 --state=closed # Filter by state
-/gh_issue list owner/repo 10 --creator=user # Filter by creator
-```
-
-**Filters:** `--state=open|closed|merged|all`, `--author=username`, `--creator=username`
-
-## Supported GitHub Events
-
-### Webhook Events (Real-Time)
-
-- `pull_request` - Opened, closed, merged
-- `issues` - Opened, closed
-- `push` - Commits to branches
-- `release` - Published
-- `workflow_run` - CI/CD status
-- `issue_comment` - New comments
-- `pull_request_review` - PR reviews
-- `create` / `delete` - Branch/tag creation and deletion
-- `fork` - Repository forks
-- `watch` - Repository stars
-
-### Polling Events (5-Minute Intervals)
-
-All webhook events above, plus:
-
-- `pull_request_review_comment` - Review comments
 
 ## Production Deployment
 
