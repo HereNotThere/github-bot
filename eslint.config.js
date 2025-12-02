@@ -84,16 +84,5 @@ export default tseslint.config(
       "@typescript-eslint/ban-ts-comment": "off",
       "tsdoc/syntax": "warn",
     },
-  },
-
-  // Test file overrides
-  {
-    files: ["**/*.test.*", "**/*.test_util.*"],
-    rules: {
-      "@typescript-eslint/no-unsafe-call": "off",
-      "@typescript-eslint/no-non-null-assertion": "off",
-      "@typescript-eslint/no-unsafe-argument": "off",
-      "tsdoc/syntax": "off",
-    },
   }
 );
