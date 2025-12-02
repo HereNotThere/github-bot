@@ -1,6 +1,4 @@
-import { Hono } from "hono";
 import { serveStatic } from "hono/bun";
-import { logger } from "hono/logger";
 import { makeTownsBot } from "@towns-protocol/bot";
 
 import commands from "./commands";
@@ -168,10 +166,7 @@ bot.onSlashCommand("gh_issue", async (handler, event) => {
 // START BOT & SETUP HONO APP
 // ============================================================================
 
-const { jwtMiddleware, handler } = bot.start();
-
-const app = new Hono();
-app.use(logger());
+const app = bot.start();
 
 // Serve static assets (OAuth page logos, etc.)
 app.use(
@@ -181,14 +176,6 @@ app.use(
     rewriteRequestPath: path => path.replace(/^\/assets/, ""),
   })
 );
-
-// Towns webhook endpoint
-app.post("/webhook", jwtMiddleware, handler);
-
-// Agent metadata endpoint
-app.get("/.well-known/agent-metadata.json", async c => {
-  return c.json(await bot.getIdentityMetadata());
-});
 
 // OAuth callback endpoint
 app.get("/oauth/callback", c =>
