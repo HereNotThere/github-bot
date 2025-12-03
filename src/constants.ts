@@ -39,6 +39,25 @@ export const ALLOWED_EVENT_TYPES_SET: ReadonlySet<EventType> = new Set(
 );
 
 /**
+ * Event types that support branch filtering.
+ * These events have branch context and can be filtered by --branches flag.
+ * Other events (issues, releases, comments, forks, stars) are not branch-specific.
+ */
+export const BRANCH_FILTERABLE_EVENTS: readonly EventType[] = [
+  "pr",
+  "commits",
+  "ci",
+  "reviews",
+  "review_comments",
+  "branches",
+] as const;
+
+/** Pre-allocated Set for O(1) branch-filterable event validation */
+export const BRANCH_FILTERABLE_EVENTS_SET: ReadonlySet<EventType> = new Set(
+  BRANCH_FILTERABLE_EVENTS
+);
+
+/**
  * Pending message cleanup interval (30 seconds)
  * How often to check for and remove stale pending messages
  */

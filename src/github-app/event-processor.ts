@@ -1,6 +1,6 @@
 import { isMatch } from "picomatch";
 
-import { EventType } from "../constants";
+import { BRANCH_FILTERABLE_EVENTS_SET, EventType } from "../constants";
 import {
   formatCreate,
   formatDelete,
@@ -70,6 +70,14 @@ export class EventProcessor {
   ) {
     if (logContext) {
       console.log(`Processing ${logContext}`);
+    }
+
+    // Validate branchContext is provided for branch-filterable events
+    const isBranchFilterable = BRANCH_FILTERABLE_EVENTS_SET.has(eventType);
+    if (isBranchFilterable && !branchContext) {
+      throw new Error(
+        `${eventType} is branch-filterable but no branchContext provided`
+      );
     }
 
     // Get subscribed channels for this repo (webhook mode only)

@@ -6,7 +6,7 @@ import {
   getRepoInfo,
   type GitHubPullRequest,
 } from "../api/github-client";
-import type { EventType } from "../constants";
+import { BRANCH_FILTERABLE_EVENTS, type EventType } from "../constants";
 import { db } from "../db";
 import { repoPollingState } from "../db/schema";
 import { formatEvent } from "../formatters/events-api";
@@ -33,6 +33,16 @@ const EVENT_TYPE_MAP: Record<EventType, string> = {
   stars: "WatchEvent",
   forks: "ForkEvent",
 };
+
+/**
+ * Set of GitHub event types that support branch filtering
+ * Derived from BRANCH_FILTERABLE_EVENTS (single source of truth)
+ */
+const BRANCH_FILTERABLE_GITHUB_EVENTS = new Set(
+  BRANCH_FILTERABLE_EVENTS.flatMap(
+    eventType => EVENT_TYPE_MAP[eventType]?.split(",") ?? []
+  )
+);
 
 /**
  * Polling service that checks GitHub repositories for new events
@@ -312,8 +322,11 @@ export class PollingService {
 
           if (channelsForEvent.length === 0) continue;
 
-          // Apply branch filtering if we have a default branch
-          if (defaultBranch) {
+          // Apply branch filtering for branch-filterable events
+          if (
+            defaultBranch &&
+            BRANCH_FILTERABLE_GITHUB_EVENTS.has(validatedEvent.type)
+          ) {
             const branch = getBranchFromEvent(validatedEvent, prDetailsMap);
             if (branch) {
               channelsForEvent = channelsForEvent.filter(channel =>
