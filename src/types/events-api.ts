@@ -6,7 +6,49 @@
  */
 
 import type { Endpoints } from "@octokit/types";
+import { emitterEventNames } from "@octokit/webhooks";
 import { z } from "zod";
+
+/** All webhook event names from \@octokit/webhooks */
+type WebhookEventName = (typeof emitterEventNames)[number];
+
+/** Extract action union from webhook event names (compile-time, inspectable) */
+type ActionsFor<TPrefix extends string> = WebhookEventName extends infer E
+  ? E extends `${TPrefix}.${infer Action}`
+    ? Action
+    : never
+  : never;
+
+/** Extract actions array at runtime (needed for Zod) */
+const actionsFor = <T extends string>(prefix: T): ActionsFor<T>[] => {
+  const prefixDot = `${prefix}.`;
+  return emitterEventNames
+    .filter(n => n.startsWith(prefixDot))
+    .map(n => n.slice(prefixDot.length)) as ActionsFor<T>[];
+};
+
+/** Inspectable action types - hover to see union */
+export type PullRequestAction = ActionsFor<"pull_request">;
+export type IssuesAction = ActionsFor<"issues">;
+export type ReleaseAction = ActionsFor<"release">;
+export type WorkflowRunAction = ActionsFor<"workflow_run">;
+export type IssueCommentAction = ActionsFor<"issue_comment">;
+export type PullRequestReviewAction = ActionsFor<"pull_request_review">;
+export type PullRequestReviewCommentAction =
+  ActionsFor<"pull_request_review_comment">;
+export type WatchAction = ActionsFor<"watch">;
+
+/** Create action schema from Octokit-derived actions */
+function actionSchema<T extends string>(prefix: T, eventType: string) {
+  const actions = actionsFor(prefix);
+  return z
+    .string()
+    .refine(
+      (action): action is ActionsFor<T> =>
+        (actions as string[]).includes(action),
+      { message: `Unknown ${eventType} action` }
+    );
+}
 
 /**
  * Base event structure from Octokit's official types
@@ -36,29 +78,7 @@ const BaseEventSchema = z.object({
  * Pull Request Event Payload
  */
 export const PullRequestPayloadSchema = z.object({
-  action: z.enum([
-    "assigned",
-    "unassigned",
-    "labeled",
-    "unlabeled",
-    "opened",
-    "edited",
-    "closed",
-    "reopened",
-    "synchronize",
-    "converted_to_draft",
-    "locked",
-    "unlocked",
-    "enqueued",
-    "dequeued",
-    "milestoned",
-    "demilestoned",
-    "ready_for_review",
-    "review_requested",
-    "review_request_removed",
-    "auto_merge_enabled",
-    "auto_merge_disabled",
-  ]),
+  action: actionSchema("pull_request", "PullRequestEvent"),
   number: z.number().optional(),
   pull_request: z
     .object({
@@ -87,24 +107,7 @@ export interface PullRequestEvent extends BaseGitHubEvent {
  * Issues Event Payload
  */
 export const IssuesPayloadSchema = z.object({
-  action: z.enum([
-    "opened",
-    "edited",
-    "deleted",
-    "transferred",
-    "pinned",
-    "unpinned",
-    "closed",
-    "reopened",
-    "assigned",
-    "unassigned",
-    "labeled",
-    "unlabeled",
-    "locked",
-    "unlocked",
-    "milestoned",
-    "demilestoned",
-  ]),
+  action: actionSchema("issues", "IssuesEvent"),
   issue: z
     .object({
       number: z.number(),
@@ -150,15 +153,7 @@ export interface PushEvent extends BaseGitHubEvent {
  * Release Event Payload
  */
 export const ReleasePayloadSchema = z.object({
-  action: z.enum([
-    "published",
-    "unpublished",
-    "created",
-    "edited",
-    "deleted",
-    "prereleased",
-    "released",
-  ]),
+  action: actionSchema("release", "ReleaseEvent"),
   release: z
     .object({
       tag_name: z.string(),
@@ -182,7 +177,7 @@ export interface ReleaseEvent extends BaseGitHubEvent {
  * Workflow Run Event Payload
  */
 export const WorkflowRunPayloadSchema = z.object({
-  action: z.enum(["requested", "in_progress", "completed"]),
+  action: actionSchema("workflow_run", "WorkflowRunEvent"),
   workflow_run: z
     .object({
       name: z.string(),
@@ -204,7 +199,7 @@ export interface WorkflowRunEvent extends BaseGitHubEvent {
  * Issue Comment Event Payload
  */
 export const IssueCommentPayloadSchema = z.object({
-  action: z.enum(["created", "edited", "deleted"]),
+  action: actionSchema("issue_comment", "IssueCommentEvent"),
   issue: z
     .object({
       number: z.number(),
@@ -232,7 +227,7 @@ export interface IssueCommentEvent extends BaseGitHubEvent {
  * Pull Request Review Event Payload
  */
 export const PullRequestReviewPayloadSchema = z.object({
-  action: z.enum(["created", "updated", "dismissed"]),
+  action: actionSchema("pull_request_review", "PullRequestReviewEvent"),
   pull_request: z
     .object({
       number: z.number(),
@@ -299,7 +294,10 @@ export interface DeleteEvent extends BaseGitHubEvent {
  * Pull Request Review Comment Event Payload (code review comments)
  */
 export const PullRequestReviewCommentPayloadSchema = z.object({
-  action: z.enum(["created", "edited", "deleted"]),
+  action: actionSchema(
+    "pull_request_review_comment",
+    "PullRequestReviewCommentEvent"
+  ),
   pull_request: z
     .object({
       number: z.number(),
@@ -334,7 +332,7 @@ export interface PullRequestReviewCommentEvent extends BaseGitHubEvent {
  * Watch Event Payload (stars)
  */
 export const WatchPayloadSchema = z.object({
-  action: z.literal("started"),
+  action: actionSchema("watch", "WatchEvent"),
 });
 
 export type WatchPayload = z.infer<typeof WatchPayloadSchema>;
