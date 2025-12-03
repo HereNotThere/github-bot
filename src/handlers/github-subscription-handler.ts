@@ -35,7 +35,8 @@ export async function handleGithubSubscription(
       "**Usage:**\n\n" +
         `- \`/github subscribe owner/repo [--events all,${ALLOWED_EVENT_TYPES.join(",")}] [--branches main,release/*]\` - Subscribe to GitHub events or add event types\n\n` +
         "- `/github unsubscribe owner/repo [--events type1,type2]` - Unsubscribe from a repository or remove specific event types\n\n" +
-        "- `/github status` - Show current subscriptions"
+        "- `/github status` - Show current subscriptions\n\n" +
+        "- `/github disconnect` - Unlink your GitHub account and remove your subscriptions"
     );
     return;
   }
@@ -62,6 +63,9 @@ export async function handleGithubSubscription(
     case "status":
       await handleStatus(handler, event, subscriptionService);
       break;
+    case "disconnect":
+      await handleDisconnect(handler, event, oauthService);
+      break;
     default:
       await handler.sendMessage(
         channelId,
@@ -69,7 +73,8 @@ export async function handleGithubSubscription(
           "**Available actions:**\n" +
           "• `subscribe`\n" +
           "• `unsubscribe`\n" +
-          "• `status`"
+          "• `status`\n" +
+          "• `disconnect`"
       );
   }
 }
@@ -560,6 +565,29 @@ async function handleStatus(
     channelId,
     `📬 **Subscribed Repositories (${subscriptions.length}):**\n\n${repoList}\n\n` +
       `⚡ Real-time  ⏱️ Polling (5 min)`
+  );
+}
+
+/**
+ * Handle disconnect action - unlink GitHub account
+ */
+async function handleDisconnect(
+  handler: BotHandler,
+  event: SlashCommandEvent,
+  oauthService: GitHubOAuthService
+): Promise<void> {
+  const { channelId, userId } = event;
+
+  const token = await oauthService.getUserToken(userId);
+  if (!token) {
+    await handler.sendMessage(channelId, "ℹ️ No GitHub account linked");
+    return;
+  }
+
+  await oauthService.disconnect(userId);
+  await handler.sendMessage(
+    channelId,
+    `✅ Disconnected GitHub account **${token.githubLogin}**`
   );
 }
 

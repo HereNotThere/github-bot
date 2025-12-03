@@ -15,7 +15,6 @@ import { handleGithubSubscription } from "./handlers/github-subscription-handler
 import { handleGitHubWebhook } from "./routes/github-webhook";
 import { handleOAuthCallback } from "./routes/oauth-callback";
 import { GitHubOAuthService } from "./services/github-oauth-service";
-import { OAuthCleanupService } from "./services/oauth-cleanup-service";
 import { PollingService } from "./services/polling-service";
 import { SubscriptionService } from "./services/subscription-service";
 
@@ -38,7 +37,6 @@ const githubApp = new GitHubApp();
 const webhookProcessor = new WebhookProcessor();
 const installationService = new InstallationService(githubApp);
 const oauthService = new GitHubOAuthService(githubApp);
-const oauthCleanupService = new OAuthCleanupService();
 
 // Subscription services
 const subscriptionService = new SubscriptionService(
@@ -133,8 +131,9 @@ bot.onSlashCommand("help", async (handler, { channelId }) => {
     "**GitHub Bot for Towns**\n\n" +
       "**Subscriptions**\n" +
       "• `/github subscribe owner/repo [--events=pr,issues,...]`\n" +
-      "• `/github unsubscribe owner/repo`\n" +
-      "• `/github status`\n\n" +
+      "• `/github unsubscribe owner/repo [--events=...]`\n" +
+      "• `/github status`\n" +
+      "• `/github disconnect`\n\n" +
       `**Events:** ${ALLOWED_EVENT_TYPES.join(", ")}\n\n` +
       "**Queries** _(public repos)_\n" +
       "• `/gh_pr owner/repo #123 [--full]`\n" +
@@ -226,8 +225,8 @@ console.log("✅ GitHub polling service started (5 minute intervals)");
 // ============================================================================
 
 // Start periodic cleanup of expired OAuth states (every hour)
-oauthCleanupService.startPeriodicCleanup();
+oauthService.startOAuthStateCleanup();
 
-console.log("✅ OAuth cleanup service started (hourly cleanup)");
+console.log("✅ OAuth state cleanup started (hourly)");
 
 export default app;
