@@ -463,21 +463,26 @@ export class SubscriptionService {
           continue;
         }
 
+        const eventTypes = parseEventTypes(sub.eventTypes);
+
         // Create the subscription (will be webhook mode since installation exists)
         const result = await this.createSubscription({
           townsUserId: sub.townsUserId,
           spaceId: sub.spaceId,
           channelId: sub.channelId,
           repoIdentifier: repoFullName,
-          eventTypes: parseEventTypes(sub.eventTypes),
+          eventTypes,
         });
 
         if (result.success && this.bot) {
           // Send success notification
-          await this.bot.sendMessage(
-            sub.channelId,
-            `✅ **Subscribed to [${repoFullName}](https://github.com/${repoFullName})**\n\n⚡ Real-time webhook delivery enabled!`
+          const message = formatSubscriptionSuccess(
+            repoFullName,
+            eventTypes,
+            null,
+            formatDeliveryInfo("webhook")
           );
+          await this.bot.sendMessage(sub.channelId, message);
           completed++;
           console.log(
             `[Subscribe] Completed pending subscription for ${repoFullName} in channel ${sub.channelId}`
@@ -815,6 +820,8 @@ export class SubscriptionService {
       .returning({
         id: githubSubscriptions.id,
         channelId: githubSubscriptions.channelId,
+        eventTypes: githubSubscriptions.eventTypes,
+        branchFilter: githubSubscriptions.branchFilter,
       });
 
     // Update pending Towns messages to reflect webhook upgrade (in parallel)
@@ -825,10 +832,16 @@ export class SubscriptionService {
 
         if (pending && this.bot) {
           try {
+            const message = formatSubscriptionSuccess(
+              repoFullName,
+              parseEventTypes(sub.eventTypes),
+              sub.branchFilter,
+              formatDeliveryInfo("webhook")
+            );
             await this.bot.editMessage(
               pending.channelId,
               pending.eventId,
-              `✅ **Subscribed to [${repoFullName}](https://github.com/${repoFullName})**\n\n⚡ Real-time webhook delivery enabled!`
+              message
             );
             this.pendingMessages.delete(key);
           } catch (error) {

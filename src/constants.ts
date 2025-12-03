@@ -68,3 +68,9 @@ export const PENDING_SUBSCRIPTION_CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
  * GitHub access tokens expire after 8 hours, refresh tokens after 6 months.
  */
 export const OAUTH_TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1000;
+
+/**
+ * OAuth state cleanup interval (1 hour)
+ * How often to remove expired OAuth state entries from the database.
+ */
+export const OAUTH_STATE_CLEANUP_INTERVAL_MS = 60 * 60 * 1000;

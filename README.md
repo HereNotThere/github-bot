@@ -33,6 +33,7 @@ Query and subscribe to repositories using slash commands. See [Usage](#usage) se
 - **Private Repository Support** - Access private repos with user permissions (GitHub App installation required)
 - **Smart Delivery** - Automatic webhook mode when GitHub App is installed
 - **Event Filtering** - Subscribe to specific event types (pr, issues, commits, etc.)
+- **Branch Filtering** - Filter events by branch patterns (main, release/*, etc.)
 - **Channel-Based Subscriptions** - Each channel has independent subscriptions
 - **Persistent Storage** - PostgreSQL database with Drizzle ORM
 
@@ -47,16 +48,29 @@ Query and subscribe to repositories using slash commands. See [Usage](#usage) se
 # Subscribe with specific event types
 /github subscribe owner/repo --events pr,issues,commits
 
+# Subscribe with branch filter
+/github subscribe owner/repo --branches main,release/*
+
 # View subscriptions
 /github status
 
-# Unsubscribe
+# Unsubscribe from a repository
 /github unsubscribe owner/repo
+
+# Remove specific event types from subscription
+/github unsubscribe owner/repo --events pr,issues
+
+# Disconnect GitHub account (also removes your subscriptions)
+/github disconnect
 ```
 
 First-time subscriptions open an OAuth window; after authorization the callback immediately creates the subscription, posts the delivery mode back into Towns, and shows the success page with webhook vs. polling status.
 
-**Event types:** `pr`, `issues`, `commits`, `releases`, `ci`, `comments`, `reviews`, `branches`, `forks`, `stars`, `all`
+**Event types:** `pr`, `issues`, `commits`, `releases`, `ci`, `comments`, `reviews`, `branches`, `review_comments`, `forks`, `stars`, `all`
+
+**Branch filter:** `--branches main,develop` or `--branches release/*` or `--branches all` (default: default branch only)
+
+> Branch filtering applies to: `pr`, `commits`, `ci`, `reviews`, `review_comments`, `branches`. Other events (`issues`, `releases`, `comments`, `forks`, `stars`) are not branch-specific.
 
 **Delivery modes:**
 
@@ -226,10 +240,9 @@ The bot supports two delivery modes:
 - [x] OAuth token renewal - Automatic refresh with 5-minute buffer before expiration
 - [x] Granular unsubscribe - `/github unsubscribe owner/repo --events pr,issues`
 - [x] Subscription management - `/github subscribe owner/repo --events releases` adds to existing
+- [x] Branch-specific filtering - `--branches main,release/*` with glob pattern support
 
 ### Event Organization
-
-- [ ] Branch-specific filtering - `--branches main,release/*` to filter commits, CI, PRs by branch
 - [ ] Thread-based event grouping - Group related events (PR + commits + CI) in threads to reduce channel noise
 - [ ] Event summaries - Digest multiple events into single update message
 

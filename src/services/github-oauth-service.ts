@@ -6,9 +6,12 @@ import {
 } from "crypto";
 
 import { Octokit } from "@octokit/rest";
-import { eq } from "drizzle-orm";
+import { eq, lt } from "drizzle-orm";
 
-import { OAUTH_TOKEN_REFRESH_BUFFER_MS } from "../constants";
+import {
+  OAUTH_STATE_CLEANUP_INTERVAL_MS,
+  OAUTH_TOKEN_REFRESH_BUFFER_MS,
+} from "../constants";
 import { db } from "../db";
 import { githubUserTokens, oauthStates } from "../db/schema";
 import { GitHubApp } from "../github-app/app";
@@ -161,7 +164,7 @@ export class GitHubOAuthService {
     // Check expiration
     if (new Date() > stateData.expiresAt) {
       // Clean up expired state
-      await db.delete(oauthStates).where(eq(oauthStates.state, state));
+      await this.deleteOAuthState(state);
       throw new Error("OAuth state expired");
     }
 
@@ -192,44 +195,35 @@ export class GitHubOAuthService {
 
     // Store or update user token
     const now = new Date();
+    const tokenFields = {
+      githubUserId: user.id,
+      githubLogin: user.login,
+      accessToken: encryptedToken,
+      tokenType: authentication.tokenType,
+      expiresAt: authentication.expiresAt
+        ? new Date(authentication.expiresAt)
+        : null,
+      refreshToken: encryptedRefreshToken,
+      refreshTokenExpiresAt: authentication.refreshTokenExpiresAt
+        ? new Date(authentication.refreshTokenExpiresAt)
+        : null,
+      updatedAt: now,
+    };
+
     await db
       .insert(githubUserTokens)
       .values({
         townsUserId: stateData.townsUserId,
-        githubUserId: user.id,
-        githubLogin: user.login,
-        accessToken: encryptedToken,
-        tokenType: authentication.tokenType,
-        expiresAt: authentication.expiresAt
-          ? new Date(authentication.expiresAt)
-          : null,
-        refreshToken: encryptedRefreshToken,
-        refreshTokenExpiresAt: authentication.refreshTokenExpiresAt
-          ? new Date(authentication.refreshTokenExpiresAt)
-          : null,
         createdAt: now,
-        updatedAt: now,
+        ...tokenFields,
       })
       .onConflictDoUpdate({
         target: githubUserTokens.townsUserId,
-        set: {
-          githubUserId: user.id,
-          githubLogin: user.login,
-          accessToken: encryptedToken,
-          tokenType: authentication.tokenType,
-          expiresAt: authentication.expiresAt
-            ? new Date(authentication.expiresAt)
-            : null,
-          refreshToken: encryptedRefreshToken,
-          refreshTokenExpiresAt: authentication.refreshTokenExpiresAt
-            ? new Date(authentication.refreshTokenExpiresAt)
-            : null,
-          updatedAt: now,
-        },
+        set: tokenFields,
       });
 
     // Clean up used state
-    await db.delete(oauthStates).where(eq(oauthStates.state, state));
+    await this.deleteOAuthState(state);
 
     // Validate redirect data from database
     const actionResult = RedirectActionSchema.safeParse(
@@ -396,6 +390,15 @@ export class GitHubOAuthService {
   }
 
   /**
+   * Delete OAuth state record
+   *
+   * @param state - OAuth state token
+   */
+  private async deleteOAuthState(state: string): Promise<void> {
+    await db.delete(oauthStates).where(eq(oauthStates.state, state));
+  }
+
+  /**
    * Refresh an expired access token using the refresh token.
    * Uses in-flight promise deduplication to prevent race conditions when
    * multiple concurrent requests detect an expired token simultaneously.
@@ -521,5 +524,64 @@ export class GitHubOAuthService {
     decrypted += decipher.final("utf8");
 
     return decrypted;
+  }
+
+  /**
+   * Clean up expired OAuth states from the database
+   *
+   * Removes all OAuth state entries where expiresAt is in the past.
+   * Should be called periodically (e.g., every hour).
+   *
+   * @returns Number of expired states deleted
+   */
+  async cleanupExpiredStates(): Promise<number> {
+    const now = new Date();
+
+    try {
+      const result = await db
+        .delete(oauthStates)
+        .where(lt(oauthStates.expiresAt, now))
+        .returning({ state: oauthStates.state });
+
+      const count = result.length;
+
+      if (count > 0) {
+        console.log(`[OAuth Cleanup] Removed ${count} expired OAuth states`);
+      }
+
+      return count;
+    } catch (error) {
+      console.error(
+        "[OAuth Cleanup] Failed to clean up expired states:",
+        error
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Start periodic cleanup of expired OAuth states
+   *
+   * @param intervalMs - Cleanup interval in milliseconds (default: 1 hour)
+   * @returns Timer ID that can be used to stop the cleanup
+   */
+  startOAuthStateCleanup(
+    intervalMs: number = OAUTH_STATE_CLEANUP_INTERVAL_MS
+  ): NodeJS.Timeout {
+    console.log(
+      `[OAuth Cleanup] Starting periodic state cleanup (every ${intervalMs / 1000 / 60} minutes)`
+    );
+
+    // Run cleanup immediately on start
+    this.cleanupExpiredStates().catch(error => {
+      console.error("[OAuth Cleanup] Initial cleanup failed:", error);
+    });
+
+    // Schedule periodic cleanup
+    return setInterval(() => {
+      this.cleanupExpiredStates().catch(error => {
+        console.error("[OAuth Cleanup] Periodic cleanup failed:", error);
+      });
+    }, intervalMs);
   }
 }
