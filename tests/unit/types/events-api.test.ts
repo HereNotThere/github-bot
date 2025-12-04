@@ -214,12 +214,12 @@ describe("validateGitHubEvent", () => {
   });
 
   describe("PullRequestReviewEvent", () => {
-    test("validates created review with 'created' action", () => {
+    test("validates submitted review", () => {
       const event = {
         ...baseEvent,
         type: "PullRequestReviewEvent",
         payload: {
-          action: "created",
+          action: "submitted",
           pull_request: {
             number: 123,
             title: "Test PR",
@@ -235,15 +235,15 @@ describe("validateGitHubEvent", () => {
       const result = validateGitHubEvent(event);
       expect(result).not.toBeNull();
       expect(result?.type).toBe("PullRequestReviewEvent");
-      expect(result?.payload.action).toBe("created");
+      expect(result?.payload.action).toBe("submitted");
     });
 
-    test("validates updated review", () => {
+    test("validates edited review", () => {
       const event = {
         ...baseEvent,
         type: "PullRequestReviewEvent",
         payload: {
-          action: "updated",
+          action: "edited",
           pull_request: { number: 123 },
           review: { state: "changes_requested" },
         },
@@ -266,12 +266,12 @@ describe("validateGitHubEvent", () => {
       expect(result).not.toBeNull();
     });
 
-    test("rejects old 'submitted' action", () => {
+    test("rejects invalid action", () => {
       const event = {
         ...baseEvent,
         type: "PullRequestReviewEvent",
         payload: {
-          action: "submitted",
+          action: "invalid_action",
         },
       };
 
