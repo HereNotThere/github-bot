@@ -42,7 +42,10 @@ function actionSchema<T extends readonly string[]>(
     .refine(
       (action): action is T[number] =>
         (actions as readonly string[]).includes(action),
-      { message: `Unknown ${eventType} action` }
+      {
+        error: issue =>
+          `Unknown ${eventType} action: "${String(issue.input)}". Expected one of: ${actions.join(", ")}`,
+      }
     );
 }
 
