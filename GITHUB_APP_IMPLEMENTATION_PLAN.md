@@ -405,10 +405,16 @@ Located at `github-app-manifest.json`. Key settings:
 
 ### 🚧 Remaining Work
 
-**Event Organization:**
+**Event Organization (Priority 1):**
 
-- Thread-based grouping for related events (PR + commits + CI)
-- Event summaries / digests to reduce channel noise
+- [x] Thread-based grouping for related events (PR + commits + CI) - Basic implementation complete
+- [ ] **PR Anchor Dynamic Updates** - Update anchor message when PR metadata changes (title, state, labels, assignees, review state, CI status)
+- [ ] Event summaries / digests to reduce channel noise
+
+**Mentions & Filters (Priority 2):**
+
+- [ ] **GitHub Mentions → Towns Mentions** - Convert GitHub @mentions to Towns @mentions when users are linked
+- [ ] **Label-Based Event Filtering** - Filter subscriptions by PR/issue labels (`--labels bug,security`)
 
 **New Commands:**
 
@@ -659,6 +665,162 @@ Or per-event-type:
 - Requires Towns Protocol thread support (verify API availability)
 - Cannot retroactively thread old events
 - Thread lookup adds ~1 DB query per event (index on composite key)
+
+### PR Anchor Dynamic Updates (Priority 1)
+
+Update the anchor message when PR metadata changes, keeping the thread anchor current without creating new top-level messages.
+
+**Fields That Trigger Anchor Refresh:**
+
+| Field        | Source Event                       | Example Change                      |
+| ------------ | ---------------------------------- | ----------------------------------- |
+| Title        | `pull_request.edited`              | "feat: Add X" → "feat: Add X and Y" |
+| State        | `pull_request.closed/reopened`     | open → closed/merged                |
+| Labels       | `pull_request.labeled/unlabeled`   | Added `bug`, removed `wip`          |
+| Assignees    | `pull_request.assigned/unassigned` | @alice assigned                     |
+| Review State | `pull_request_review.submitted`    | → approved / changes_requested      |
+| CI Status    | `check_suite.completed` (optional) | ✅ passing / ❌ failing             |
+
+**Implementation:**
+
+1. **Store anchor message ID** in `event_threads.thread_event_id` (already exists)
+2. **Detect metadata changes** in:
+   - `pull_request` events: `edited`, `labeled`, `unlabeled`, `assigned`, `unassigned`, `closed`, `reopened`
+   - `pull_request_review` events: `submitted` (to update review state summary)
+   - `check_suite` events: `completed` (optional, for CI status)
+3. **Regenerate anchor card** with updated metadata
+4. **Update message** via `bot.editMessage(channelId, threadEventId, newMessage)`
+5. **Do NOT create new thread** - update in place
+
+**Anchor Card Format:**
+
+```text
+🔀 **PR #123** open → merged
+feat: Add dark mode support
+
+👤 @user  📊 +340 -120
+🏷️ enhancement, ui
+👥 @reviewer1, @reviewer2
+✅ 2 approvals  ⏳ CI passing
+
+🔗 https://github.com/...
+```
+
+**Interaction with Thread Replies:**
+
+- Thread replies continue to be added as new messages
+- Only the anchor (first message) is updated
+- Thread context preserved
+
+**Webhook Ordering:**
+
+- GitHub webhooks may arrive out of order
+- Use `updated_at` timestamp from payload to avoid overwriting newer state with older event
+- Store `last_updated_at` in `event_threads` table
+
+**Idempotency:**
+
+- Same event delivered twice should produce same anchor content
+- Use `X-GitHub-Delivery` header to skip duplicate deliveries
+- Anchor regeneration is deterministic based on current PR state
+
+**Database Changes (comments only - not implemented yet):**
+
+```sql
+-- Add to event_threads table
+-- last_updated_at TIMESTAMPTZ  -- Track last anchor update timestamp
+-- anchor_content_hash TEXT     -- Optional: detect actual content changes
+```
+
+### GitHub Mentions → Towns Mentions Mapping (Priority 2)
+
+Convert GitHub @mentions to Towns @mentions when the GitHub user is linked to a Towns account.
+
+**Detection Points:**
+
+- PR body / Issue body
+- PR comments / Issue comments
+- Review comments
+- Review body
+
+**Mapping Storage:**
+
+Leverage existing `github_user_tokens` table which links `towns_user_id` ↔ `github_login`:
+
+```sql
+-- Already exists in github_user_tokens:
+-- towns_user_id TEXT PRIMARY KEY
+-- github_login TEXT  -- from OAuth profile
+```
+
+**Implementation Flow:**
+
+```
+Incoming comment/body text
+  ↓
+Regex extract @mentions: /@([a-zA-Z0-9_-]+)/g
+  ↓
+For each @mention:
+  Lookup github_login in github_user_tokens
+    ├─ Found → Replace with Towns @mention: <@{towns_user_id}>
+    └─ Not found → Leave as plain text @username
+  ↓
+Send formatted message with Towns mentions array
+```
+
+**Message Format:**
+
+```typescript
+await handler.sendMessage(channelId, message, {
+  mentions: [
+    { userId: "0x123...", displayName: "alice" },
+    { userId: "0x456...", displayName: "bob" },
+  ],
+});
+```
+
+**Edge Cases:**
+
+- GitHub bot accounts (e.g., `@dependabot`) - leave as plain text
+- Case sensitivity: GitHub usernames are case-insensitive
+- Multiple mentions of same user - deduplicate in mentions array
+
+### Label-Based Event Filtering (Priority 2)
+
+Filter PR/Issue subscriptions by labels to reduce noise.
+
+**Syntax:**
+
+```bash
+/github subscribe owner/repo --labels bug,security
+/github subscribe owner/repo --labels "priority:high"
+/github subscribe owner/repo --labels bug --events pr,issues
+```
+
+**Behavior:**
+
+- Only deliver events where the PR/issue has at least one matching label
+- Labels are checked at event delivery time (not subscription time)
+- Applies to: `pr`, `issues`, `comments`, `reviews`, `review_comments`
+- Does NOT apply to: `commits`, `ci`, `releases`, `branches`, `forks`, `stars`
+
+**Database Changes (comments only):**
+
+```sql
+-- Add to github_subscriptions table
+-- label_filter TEXT  -- NULL = no filter, else comma-separated labels
+```
+
+**Interaction with Other Features:**
+
+- **PR Anchor Updates**: Label changes trigger anchor refresh, then check if subscription still matches
+- **Thread Replies**: If PR loses matching label, existing thread continues (no orphaning)
+- **Branch Filters**: Labels and branches are independent filters (AND logic)
+
+**UI Considerations:**
+
+- `/github status` should show label filters
+- Warning if no events match filter in last 7 days
 
 ### Branch-Specific Event Filtering Brainstorm
 

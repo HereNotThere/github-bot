@@ -33,7 +33,7 @@ Query and subscribe to repositories using slash commands. See [Usage](#usage) se
 - **Private Repository Support** - Access private repos with user permissions (GitHub App installation required)
 - **Smart Delivery** - Automatic webhook mode when GitHub App is installed
 - **Event Filtering** - Subscribe to specific event types (pr, issues, commits, etc.)
-- **Branch Filtering** - Filter events by branch patterns (main, release/*, etc.)
+- **Branch Filtering** - Filter events by branch patterns (main, release/\*, etc.)
 - **Channel-Based Subscriptions** - Each channel has independent subscriptions
 - **Persistent Storage** - PostgreSQL database with Drizzle ORM
 
@@ -104,22 +104,21 @@ First-time subscriptions open an OAuth window; after authorization the callback 
 
 ### Webhook Events (Real-Time)
 
-- `pull_request` - Opened, closed, merged
-- `issues` - Opened, closed
+- `pull_request` - Opened, closed, merged (threaded)
+- `issues` - Opened, closed (threaded)
 - `push` - Commits to branches
 - `release` - Published
 - `workflow_run` - CI/CD status
-- `issue_comment` - New comments
-- `pull_request_review` - PR reviews
+- `issue_comment` - New comments (threaded to PR/issue)
+- `pull_request_review` - PR reviews (threaded to PR)
+- `pull_request_review_comment` - Review comments (threaded to PR)
 - `create` / `delete` - Branch/tag creation and deletion
 - `fork` - Repository forks
 - `watch` - Repository stars
 
 ### Polling Events (5-Minute Intervals)
 
-All webhook events above, plus:
-
-- `pull_request_review_comment` - Review comments
+All webhook events above except `workflow_run` (CI/CD) are also available via polling for repositories without the GitHub App installed. CI events require the GitHub App for real-time webhooks.
 
 ## Setup
 
@@ -225,7 +224,6 @@ The bot supports two delivery modes:
 ## Current Limitations
 
 - **No interactive actions** - Towns Protocol doesn't support buttons/forms yet
-- **No threaded conversations** - All notifications sent as top-level messages
 - **5-minute polling delay** - Without GitHub App, events have 5-minute latency
 
 ## Future Enhancements
@@ -243,7 +241,11 @@ The bot supports two delivery modes:
 - [x] Branch-specific filtering - `--branches main,release/*` with glob pattern support
 
 ### Event Organization
-- [ ] Thread-based event grouping - Group related events (PR + commits + CI) in threads to reduce channel noise
+
+- [x] Thread-based event grouping - Group related events (PR + commits + CI) in threads
+- [ ] **Dynamic PR anchor updates** - Update anchor message when PR metadata changes (title, state, labels, assignees, reviews, CI)
+- [ ] **Mentions support** - Convert GitHub @mentions to Towns @mentions when users are linked
+- [ ] **Label filters** - Filter subscriptions by PR/issue labels (`--labels bug,security`)
 - [ ] Event summaries - Digest multiple events into single update message
 
 ### Commands & Queries
