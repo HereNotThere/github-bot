@@ -25,7 +25,7 @@ const EVENT_TYPE_MAP: Record<EventType, string> = {
   issues: "IssuesEvent",
   commits: "PushEvent",
   releases: "ReleaseEvent",
-  ci: "WorkflowRunEvent",
+  ci: "", // WorkflowRunEvent not available in Events API (webhooks only)
   comments: "IssueCommentEvent",
   reviews: "PullRequestReviewEvent",
   branches: "CreateEvent,DeleteEvent",
@@ -419,9 +419,6 @@ function getBranchFromEvent(
         return event.payload.ref ?? null;
       }
       return null;
-
-    case "WorkflowRunEvent":
-      return event.payload.workflow_run?.head_branch ?? null;
 
     case "PullRequestReviewEvent":
     case "PullRequestReviewCommentEvent": {
