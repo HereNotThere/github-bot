@@ -56,7 +56,7 @@ describe("validateGitHubEvent", () => {
         ...baseEvent,
         type: "PullRequestEvent",
         payload: {
-          action: "synchronize",
+          action: "labeled",
         },
       };
 
@@ -115,16 +115,16 @@ describe("validateGitHubEvent", () => {
   });
 
   describe("PushEvent", () => {
-    test("validates push with commits", () => {
+    test("validates push with full payload", () => {
       const event = {
         ...baseEvent,
         type: "PushEvent",
         payload: {
+          repository_id: 12345,
+          push_id: 67890,
           ref: "refs/heads/main",
-          commits: [
-            { sha: "abc123", message: "Initial commit" },
-            { sha: "def456", message: "Second commit" },
-          ],
+          head: "abc123def456",
+          before: "000000000000",
         },
       };
 
@@ -133,7 +133,7 @@ describe("validateGitHubEvent", () => {
       expect(result?.type).toBe("PushEvent");
     });
 
-    test("validates push without commits", () => {
+    test("validates push with minimal payload", () => {
       const event = {
         ...baseEvent,
         type: "PushEvent",
@@ -169,28 +169,6 @@ describe("validateGitHubEvent", () => {
     });
   });
 
-  describe("WorkflowRunEvent", () => {
-    test("validates completed workflow", () => {
-      const event = {
-        ...baseEvent,
-        type: "WorkflowRunEvent",
-        payload: {
-          action: "completed",
-          workflow_run: {
-            name: "CI",
-            conclusion: "success",
-            head_branch: "main",
-            html_url: "https://github.com/owner/repo/actions/runs/123",
-          },
-        },
-      };
-
-      const result = validateGitHubEvent(event);
-      expect(result).not.toBeNull();
-      expect(result?.type).toBe("WorkflowRunEvent");
-    });
-  });
-
   describe("IssueCommentEvent", () => {
     test("validates created comment", () => {
       const event = {
@@ -214,12 +192,12 @@ describe("validateGitHubEvent", () => {
   });
 
   describe("PullRequestReviewEvent", () => {
-    test("validates submitted review", () => {
+    test("validates created review", () => {
       const event = {
         ...baseEvent,
         type: "PullRequestReviewEvent",
         payload: {
-          action: "submitted",
+          action: "created",
           pull_request: {
             number: 123,
             title: "Test PR",
@@ -235,15 +213,15 @@ describe("validateGitHubEvent", () => {
       const result = validateGitHubEvent(event);
       expect(result).not.toBeNull();
       expect(result?.type).toBe("PullRequestReviewEvent");
-      expect(result?.payload.action).toBe("submitted");
+      expect(result?.payload.action).toBe("created");
     });
 
-    test("validates edited review", () => {
+    test("validates updated review", () => {
       const event = {
         ...baseEvent,
         type: "PullRequestReviewEvent",
         payload: {
-          action: "edited",
+          action: "updated",
           pull_request: { number: 123 },
           review: { state: "changes_requested" },
         },
@@ -375,7 +353,7 @@ describe("validateGitHubEvent", () => {
         ...baseEvent,
         type: "PullRequestReviewCommentEvent",
         payload: {
-          action: "edited",
+          action: "created",
           comment: {
             body: "Updated comment",
             position: null,
@@ -425,6 +403,7 @@ describe("validateGitHubEvent", () => {
         ...baseEvent,
         type: "ForkEvent",
         payload: {
+          action: "forked",
           forkee: {
             full_name: "testuser/repo-fork",
             html_url: "https://github.com/testuser/repo-fork",
@@ -441,7 +420,9 @@ describe("validateGitHubEvent", () => {
       const event = {
         ...baseEvent,
         type: "ForkEvent",
-        payload: {},
+        payload: {
+          action: "forked",
+        },
       };
 
       const result = validateGitHubEvent(event);

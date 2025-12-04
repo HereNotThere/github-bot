@@ -93,36 +93,20 @@ export function formatEvent(
     }
 
     case "PushEvent": {
-      const { commits, ref } = payload;
+      const { ref, head, before } = payload;
 
-      if (!commits || commits.length === 0) return "";
+      if (!ref) return "";
 
-      const branch = ref?.replace("refs/heads/", "") || "unknown";
-      const commitCount = commits.length;
+      const branch = ref.replace("refs/heads/", "");
+      const shortHead = head?.substring(0, 7) || "unknown";
+      const shortBefore = before?.substring(0, 7) || "unknown";
 
-      let message =
+      return (
         `📦 **Push to ${repo.name}**\n` +
         `🌿 Branch: \`${branch}\`\n` +
         `👤 ${actor.login}\n` +
-        `📝 ${commitCount} commit${commitCount > 1 ? "s" : ""}\n\n`;
-
-      // Show first 3 commits
-      const displayCommits = commits.slice(0, 3);
-      for (const commit of displayCommits) {
-        const shortSha = commit.sha.substring(0, 7);
-        const firstLine = commit.message.split("\n")[0];
-        const shortMessage =
-          firstLine.length > 60
-            ? firstLine.substring(0, 60) + "..."
-            : firstLine;
-        message += `\`${shortSha}\` ${shortMessage}\n`;
-      }
-
-      if (commitCount > 3) {
-        message += `\n_... and ${commitCount - 3} more commit${commitCount - 3 > 1 ? "s" : ""}_`;
-      }
-
-      return message;
+        `🔀 \`${shortBefore}\` → \`${shortHead}\``
+      );
     }
 
     case "ReleaseEvent": {
@@ -140,27 +124,6 @@ export function formatEvent(
           metadata: [`📦 ${release.tag_name}`],
           url: release.html_url,
         });
-      }
-      return "";
-    }
-
-    case "WorkflowRunEvent": {
-      const { action, workflow_run: workflowRun } = payload;
-
-      if (!workflowRun) return "";
-
-      if (action === "completed") {
-        const emoji = workflowRun.conclusion === "success" ? "✅" : "❌";
-        const status =
-          workflowRun.conclusion === "success" ? "Passed" : "Failed";
-
-        return (
-          `${emoji} **CI ${status}**\n` +
-          `**${repo.name}**\n` +
-          `🔧 ${workflowRun.name}\n` +
-          `🌿 ${workflowRun.head_branch}\n` +
-          `🔗 ${workflowRun.html_url}`
-        );
       }
       return "";
     }

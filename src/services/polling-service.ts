@@ -25,7 +25,7 @@ const EVENT_TYPE_MAP: Record<EventType, string> = {
   issues: "IssuesEvent",
   commits: "PushEvent",
   releases: "ReleaseEvent",
-  ci: "WorkflowRunEvent",
+  ci: "", // WorkflowRunEvent not available in Events API (webhooks only)
   comments: "IssueCommentEvent",
   reviews: "PullRequestReviewEvent",
   branches: "CreateEvent,DeleteEvent",
@@ -40,7 +40,7 @@ const EVENT_TYPE_MAP: Record<EventType, string> = {
  */
 const BRANCH_FILTERABLE_GITHUB_EVENTS = new Set(
   BRANCH_FILTERABLE_EVENTS.flatMap(
-    eventType => EVENT_TYPE_MAP[eventType]?.split(",") ?? []
+    eventType => EVENT_TYPE_MAP[eventType]?.split(",").filter(Boolean) ?? []
   )
 );
 
@@ -386,7 +386,8 @@ function isEventTypeMatch(
 
   // Check if the event type matches any of the subscribed short names
   for (const shortName of subscriptionTypes) {
-    const mappedTypes = EVENT_TYPE_MAP[shortName]?.split(",") ?? [];
+    const mappedTypes =
+      EVENT_TYPE_MAP[shortName]?.split(",").filter(Boolean) ?? [];
     if (mappedTypes.includes(eventType)) {
       return true;
     }
@@ -419,9 +420,6 @@ function getBranchFromEvent(
         return event.payload.ref ?? null;
       }
       return null;
-
-    case "WorkflowRunEvent":
-      return event.payload.workflow_run?.head_branch ?? null;
 
     case "PullRequestReviewEvent":
     case "PullRequestReviewCommentEvent": {
