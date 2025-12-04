@@ -130,16 +130,8 @@ export class EventProcessor {
       return;
     }
 
-    // Format message (compact for thread replies)
-    const isThreadReply = !!threadingContext && !threadingContext.isAnchor;
-    const message = formatter(event, isThreadReply);
-
-    if (!message) {
-      console.log(
-        "Formatter returned empty message (event action not handled)"
-      );
-      return;
-    }
+    // Determine if this is a follow-up event (not an anchor)
+    const isFollowUpEvent = !!threadingContext && !threadingContext.isAnchor;
 
     // Send to all interested channels
     // For threaded events, look up or create thread mappings per channel
@@ -148,7 +140,7 @@ export class EventProcessor {
 
       try {
         // For follow-up events, look up existing thread (undefined if not found or anchor)
-        const threadId = isThreadReply
+        const threadId = isFollowUpEvent
           ? ((await this.threadService.getThreadId(
               spaceId,
               channelId,
@@ -157,6 +149,16 @@ export class EventProcessor {
               threadingContext.anchorNumber
             )) ?? undefined)
           : undefined;
+
+        // Format message - use compact format only if we're actually replying to a thread
+        const message = formatter(event, !!threadId);
+
+        if (!message) {
+          console.log(
+            "Formatter returned empty message (event action not handled)"
+          );
+          return;
+        }
 
         // Send message (threaded for follow-ups, top-level for anchors/no-context)
         const { eventId } = await this.bot.sendMessage(channelId, message, {
