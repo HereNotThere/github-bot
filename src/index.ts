@@ -17,6 +17,7 @@ import { handleOAuthCallback } from "./routes/oauth-callback";
 import { GitHubOAuthService } from "./services/github-oauth-service";
 import { PollingService } from "./services/polling-service";
 import { SubscriptionService } from "./services/subscription-service";
+import { ThreadService } from "./services/thread-service";
 
 await runMigrations();
 console.log("✅ Database ready (schema ensured)");
@@ -48,8 +49,15 @@ const subscriptionService = new SubscriptionService(
 // Enable automatic subscription upgrades when repos are added to GitHub App
 installationService.setSubscriptionService(subscriptionService);
 
+// Thread service for grouping related events
+const threadService = new ThreadService();
+
 // Event processing service
-const eventProcessor = new EventProcessor(bot, subscriptionService);
+const eventProcessor = new EventProcessor(
+  bot,
+  subscriptionService,
+  threadService
+);
 
 // Polling service (5 minute intervals)
 const pollingService = new PollingService(
@@ -230,7 +238,10 @@ console.log("✅ GitHub polling service started (5 minute intervals)");
 
 // Start periodic cleanup of expired OAuth states (every hour)
 oauthService.startOAuthStateCleanup();
-
 console.log("✅ OAuth state cleanup started (hourly)");
+
+// Start periodic cleanup of expired thread mappings (every 24 hours)
+threadService.startPeriodicCleanup();
+console.log("✅ Thread cleanup service started (daily cleanup)");
 
 export default app;

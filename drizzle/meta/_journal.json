@@ -43,6 +43,13 @@
       "when": 1764410325645,
       "tag": "0005_neat_blindfold",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1764615938698,
+      "tag": "0006_certain_micromacro",
+      "breakpoints": true
     }
   ]
 }

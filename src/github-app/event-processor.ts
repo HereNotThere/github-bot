@@ -19,6 +19,7 @@ import type {
   BranchFilter,
   SubscriptionService,
 } from "../services/subscription-service";
+import type { AnchorType, ThreadService } from "../services/thread-service";
 import type { TownsBot } from "../types/bot";
 import type {
   CreatePayload,
@@ -36,17 +37,33 @@ import type {
 } from "../types/webhooks";
 
 /**
+ * Threading context for events that can be grouped into threads
+ */
+interface ThreadingContext {
+  anchorType: AnchorType;
+  anchorNumber: number;
+  isAnchor: boolean; // true for "opened" events that start a thread
+}
+
+/**
  * EventProcessor - Routes webhook events to formatters and sends to subscribed channels
  *
  * Maps webhook event types to subscription event types and filters by user preferences.
+ * Supports threading: PR/issue opened events start threads, follow-up events reply to them.
  */
 export class EventProcessor {
   private bot: TownsBot;
   private subscriptionService: SubscriptionService;
+  private threadService: ThreadService;
 
-  constructor(bot: TownsBot, subscriptionService: SubscriptionService) {
+  constructor(
+    bot: TownsBot,
+    subscriptionService: SubscriptionService,
+    threadService: ThreadService
+  ) {
     this.bot = bot;
     this.subscriptionService = subscriptionService;
+    this.threadService = threadService;
   }
 
   /**
@@ -58,6 +75,7 @@ export class EventProcessor {
    * @param formatter - Function to format the event as a message
    * @param logContext - Optional context string for logging
    * @param branchContext - Optional branch context for branch-specific filtering
+   * @param threadingContext - Optional threading context for PR/issue grouping
    */
   private async processEvent<
     T extends { repository: { full_name: string; default_branch: string } },
@@ -66,7 +84,8 @@ export class EventProcessor {
     eventType: EventType,
     formatter: (event: T) => string,
     logContext?: string,
-    branchContext?: { branch: string }
+    branchContext?: { branch: string },
+    threadingContext?: ThreadingContext
   ) {
     if (logContext) {
       console.log(`Processing ${logContext}`);
@@ -80,9 +99,11 @@ export class EventProcessor {
       );
     }
 
+    const repoFullName = event.repository.full_name;
+
     // Get subscribed channels for this repo (webhook mode only)
     const channels = await this.subscriptionService.getRepoSubscribers(
-      event.repository.full_name,
+      repoFullName,
       "webhook"
     );
 
@@ -119,37 +140,67 @@ export class EventProcessor {
       return;
     }
 
-    // Send to all interested channels in parallel
-    const results = await Promise.allSettled(
-      interestedChannels.map(channel =>
-        this.bot.sendMessage(channel.channelId, message)
-      )
-    );
+    // Send to all interested channels
+    // For threaded events, look up or create thread mappings per channel
+    const sendPromises = interestedChannels.map(async channel => {
+      const { spaceId, channelId } = channel;
 
-    // Log failures
-    results.forEach((result, index) => {
-      if (result.status === "rejected") {
-        console.error(
-          `Failed to send to ${interestedChannels[index].channelId}:`,
-          result.reason
-        );
+      try {
+        // For follow-up events, look up existing thread (undefined if not found or anchor)
+        const threadId =
+          threadingContext && !threadingContext.isAnchor
+            ? ((await this.threadService.getThreadId(
+                spaceId,
+                channelId,
+                repoFullName,
+                threadingContext.anchorType,
+                threadingContext.anchorNumber
+              )) ?? undefined)
+            : undefined;
+
+        // Send message (threaded for follow-ups, top-level for anchors/no-context)
+        const { eventId } = await this.bot.sendMessage(channelId, message, {
+          threadId,
+        });
+
+        // Store thread mapping for anchor events
+        if (threadingContext?.isAnchor && eventId) {
+          await this.threadService.storeThread({
+            spaceId,
+            channelId,
+            repoFullName,
+            anchorType: threadingContext.anchorType,
+            anchorNumber: threadingContext.anchorNumber,
+            threadEventId: eventId,
+          });
+        }
+      } catch (error) {
+        console.error(`Failed to send to ${channel.channelId}:`, error);
       }
     });
+
+    await Promise.allSettled(sendPromises);
   }
 
   /**
    * Process a pull request webhook event
    * Branch filter applies to base branch (merge target)
+   * Threading: "opened" starts thread, other actions reply to it
    */
   async onPullRequest(event: PullRequestPayload) {
-    const { pull_request, repository } = event;
+    const { pull_request, repository, action } = event;
     const baseBranch = pull_request.base.ref;
     await this.processEvent(
       event,
       "pr",
       formatPullRequest,
-      `PR event: ${event.action} - ${repository.full_name}#${pull_request.number}`,
-      { branch: baseBranch }
+      `PR event: ${action} - ${repository.full_name}#${pull_request.number}`,
+      { branch: baseBranch },
+      {
+        anchorType: "pr",
+        anchorNumber: pull_request.number,
+        isAnchor: action === "opened",
+      }
     );
   }
 
@@ -172,14 +223,21 @@ export class EventProcessor {
 
   /**
    * Process an issues webhook event
+   * Threading: "opened" starts thread, other actions reply to it
    */
   async onIssues(event: IssuesPayload) {
-    const { issue, repository } = event;
+    const { issue, repository, action } = event;
     await this.processEvent(
       event,
       "issues",
       formatIssue,
-      `issue event: ${event.action} - ${repository.full_name}#${issue.number}`
+      `issue event: ${action} - ${repository.full_name}#${issue.number}`,
+      undefined,
+      {
+        anchorType: "issue",
+        anchorNumber: issue.number,
+        isAnchor: action === "opened",
+      }
     );
   }
 
@@ -215,20 +273,32 @@ export class EventProcessor {
 
   /**
    * Process an issue comment webhook event
+   * Threading: comments thread to parent PR or issue
+   * Note: GitHub fires issue_comment for both issues AND PRs
    */
   async onIssueComment(event: IssueCommentPayload) {
     const { issue, repository } = event;
+    // Determine if this is a comment on a PR or an issue
+    // GitHub includes pull_request field in the issue object for PR comments
+    const isPrComment = "pull_request" in issue && issue.pull_request != null;
     await this.processEvent(
       event,
       "comments",
       formatIssueComment,
-      `issue comment event: ${event.action} - ${repository.full_name}#${issue.number}`
+      `issue comment event: ${event.action} - ${repository.full_name}#${issue.number}`,
+      undefined,
+      {
+        anchorType: isPrComment ? "pr" : "issue",
+        anchorNumber: issue.number,
+        isAnchor: false, // Comments are never anchors
+      }
     );
   }
 
   /**
    * Process a pull request review webhook event
    * Branch filter applies to the PR's base branch (merge target)
+   * Threading: reviews thread to parent PR
    */
   async onPullRequestReview(event: PullRequestReviewPayload) {
     const { pull_request, repository } = event;
@@ -238,7 +308,12 @@ export class EventProcessor {
       "reviews",
       formatPullRequestReview,
       `PR review event: ${event.action} - ${repository.full_name}#${pull_request.number}`,
-      { branch: baseBranch }
+      { branch: baseBranch },
+      {
+        anchorType: "pr",
+        anchorNumber: pull_request.number,
+        isAnchor: false, // Reviews are never anchors
+      }
     );
   }
 
@@ -254,7 +329,12 @@ export class EventProcessor {
       "review_comments",
       formatPullRequestReviewComment,
       `PR review comment event: ${event.action} - ${repository.full_name}#${pull_request.number}`,
-      { branch: baseBranch }
+      { branch: baseBranch },
+      {
+        anchorType: "pr",
+        anchorNumber: pull_request.number,
+        isAnchor: false,
+      }
     );
   }
 

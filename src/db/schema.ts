@@ -229,3 +229,44 @@ export const pendingSubscriptions = pgTable(
     ),
   })
 );
+
+/**
+ * Maps GitHub PR/issue events to Towns thread IDs for grouping related events
+ * Enables threading: PR opened events start threads, subsequent events reply
+ */
+export const eventThreads = pgTable(
+  "event_threads",
+  {
+    id: serial("id").primaryKey(),
+    spaceId: text("space_id").notNull(),
+    channelId: text("channel_id").notNull(),
+    repoFullName: text("repo_full_name").notNull(),
+    anchorType: text("anchor_type").notNull(), // 'pr' | 'issue'
+    anchorNumber: integer("anchor_number").notNull(), // PR/issue number
+    threadEventId: text("thread_event_id").notNull(), // Towns eventId of anchor message
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(), // Auto-cleanup after 30 days
+  },
+  table => ({
+    anchorTypeCheck: check(
+      "anchor_type_check",
+      sql`${table.anchorType} IN ('pr', 'issue')`
+    ),
+    // Unique constraint on (space, channel, repo, type, number)
+    uniqueThread: uniqueIndex("event_threads_unique_idx").on(
+      table.spaceId,
+      table.channelId,
+      table.repoFullName,
+      table.anchorType,
+      table.anchorNumber
+    ),
+    // Index for looking up threads by repo and PR/issue number
+    repoAnchorIndex: index("idx_event_threads_repo_anchor").on(
+      table.repoFullName,
+      table.anchorType,
+      table.anchorNumber
+    ),
+    // Index for cleanup job to find expired threads
+    expiresIndex: index("idx_event_threads_expires").on(table.expiresAt),
+  })
+);

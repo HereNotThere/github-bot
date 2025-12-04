@@ -616,6 +616,7 @@ export class SubscriptionService {
     deliveryMode?: "webhook" | "polling"
   ): Promise<
     Array<{
+      spaceId: string;
       channelId: string;
       eventTypes: EventType[];
       branchFilter: BranchFilter;
@@ -629,6 +630,7 @@ export class SubscriptionService {
 
     const results = await db
       .select({
+        spaceId: githubSubscriptions.spaceId,
         channelId: githubSubscriptions.channelId,
         eventTypes: githubSubscriptions.eventTypes,
         branchFilter: githubSubscriptions.branchFilter,
@@ -637,6 +639,7 @@ export class SubscriptionService {
       .where(and(...conditions));
 
     return results.map(r => ({
+      spaceId: r.spaceId,
       channelId: r.channelId,
       eventTypes: parseEventTypes(r.eventTypes),
       branchFilter: r.branchFilter,
