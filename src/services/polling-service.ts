@@ -40,7 +40,7 @@ const EVENT_TYPE_MAP: Record<EventType, string> = {
  */
 const BRANCH_FILTERABLE_GITHUB_EVENTS = new Set(
   BRANCH_FILTERABLE_EVENTS.flatMap(
-    eventType => EVENT_TYPE_MAP[eventType]?.split(",") ?? []
+    eventType => EVENT_TYPE_MAP[eventType]?.split(",").filter(Boolean) ?? []
   )
 );
 
@@ -386,7 +386,8 @@ function isEventTypeMatch(
 
   // Check if the event type matches any of the subscribed short names
   for (const shortName of subscriptionTypes) {
-    const mappedTypes = EVENT_TYPE_MAP[shortName]?.split(",") ?? [];
+    const mappedTypes =
+      EVENT_TYPE_MAP[shortName]?.split(",").filter(Boolean) ?? [];
     if (mappedTypes.includes(eventType)) {
       return true;
     }
