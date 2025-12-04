@@ -21,19 +21,23 @@ import { buildMessage, getPrEventEmoji, getPrEventHeader } from "./shared";
 
 /**
  * Extract a clean preview from markdown/HTML content
- * Strips HTML comments and markdown formatting, returns first non-empty line
+ * Strips HTML comments, joins lines, truncates to maxLength
+ * Keeps markdown formatting since Towns renders it
  */
-function extractPreview(body: string, maxLength = 100): string {
+function extractPreview(
+  body: string | null | undefined,
+  maxLength = 100
+): string {
+  if (!body) return "";
   const cleaned = body
     .replace(/<!--[\s\S]*?-->/g, "") // Strip HTML comments
-    .replace(/\*\*([^*]+)\*\*/g, "$1") // **bold** → bold
-    .replace(/_([^_]+)_/g, "$1") // _italic_ → italic
-    .replace(/`([^`]+)`/g, "$1") // `code` → code
     .split("\n")
     .map(line => line.trim())
-    .find(line => line.length > 0);
-  const preview = cleaned?.substring(0, maxLength) || "";
-  return preview.length < (cleaned?.length || 0) ? preview + "..." : preview;
+    .filter(line => line.length > 0)
+    .join(" ");
+  return cleaned.length > maxLength
+    ? cleaned.substring(0, maxLength) + "..."
+    : cleaned;
 }
 
 export function formatPullRequest(payload: PullRequestPayload): string {
@@ -198,7 +202,7 @@ export function formatPullRequestReview(
     const user = review.user?.login || "unknown";
 
     if (isThreadReply) {
-      const preview = review.body ? extractPreview(review.body) : "";
+      const preview = extractPreview(review.body);
       return preview
         ? `${emoji} ${state}: "${preview}" 👤 ${user} 🔗 ${review.html_url}`
         : `${emoji} ${state} 👤 ${user} 🔗 ${review.html_url}`;
