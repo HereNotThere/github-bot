@@ -14,7 +14,6 @@ import type {
   PushEvent,
   ReleaseEvent,
   WatchEvent,
-  WorkflowRunEvent,
 } from "../../../src/types/events-api";
 
 describe("formatEvent", () => {
@@ -199,13 +198,14 @@ describe("formatEvent", () => {
   });
 
   describe("PushEvent", () => {
-    test("formats push with single commit", () => {
+    test("formats push with full payload", () => {
       const event: PushEvent = {
         ...baseEvent,
         type: "PushEvent",
         payload: {
           ref: "refs/heads/main",
-          commits: [{ sha: "abc123def456", message: "Initial commit" }],
+          head: "abc123def456789",
+          before: "000111222333444",
         },
       };
 
@@ -213,73 +213,31 @@ describe("formatEvent", () => {
       expect(result).toContain("📦");
       expect(result).toContain("Push to owner/repo");
       expect(result).toContain("main");
-      expect(result).toContain("1 commit");
       expect(result).toContain("abc123d");
-      expect(result).toContain("Initial commit");
+      expect(result).toContain("0001112");
     });
 
-    test("formats push with multiple commits", () => {
+    test("formats push to feature branch", () => {
       const event: PushEvent = {
         ...baseEvent,
         type: "PushEvent",
         payload: {
-          ref: "refs/heads/feature",
-          commits: [
-            { sha: "abc123", message: "First commit" },
-            { sha: "def456", message: "Second commit" },
-            { sha: "ghi789", message: "Third commit" },
-          ],
+          ref: "refs/heads/feature/new-feature",
+          head: "abc123",
+          before: "def456",
         },
       };
 
       const result = formatEvent(event, new Map());
-      expect(result).toContain("3 commits");
-      expect(result).toContain("feature");
+      expect(result).toContain("feature/new-feature");
+      expect(result).toContain("testuser");
     });
 
-    test("truncates long commit messages", () => {
-      const longMessage = "a".repeat(100);
+    test("returns empty string when no ref", () => {
       const event: PushEvent = {
         ...baseEvent,
         type: "PushEvent",
-        payload: {
-          ref: "refs/heads/main",
-          commits: [{ sha: "abc123", message: longMessage }],
-        },
-      };
-
-      const result = formatEvent(event, new Map());
-      expect(result).toContain("...");
-    });
-
-    test("shows only first 3 commits with indicator", () => {
-      const event: PushEvent = {
-        ...baseEvent,
-        type: "PushEvent",
-        payload: {
-          ref: "refs/heads/main",
-          commits: [
-            { sha: "a", message: "1" },
-            { sha: "b", message: "2" },
-            { sha: "c", message: "3" },
-            { sha: "d", message: "4" },
-            { sha: "e", message: "5" },
-          ],
-        },
-      };
-
-      const result = formatEvent(event, new Map());
-      expect(result).toContain("... and 2 more commits");
-    });
-
-    test("returns empty string when no commits", () => {
-      const event: PushEvent = {
-        ...baseEvent,
-        type: "PushEvent",
-        payload: {
-          ref: "refs/heads/main",
-          commits: [],
-        },
+        payload: {},
       };
 
       const result = formatEvent(event, new Map());
@@ -335,62 +293,6 @@ describe("formatEvent", () => {
         type: "ReleaseEvent",
         payload: {
           action: "created",
-        },
-      };
-
-      const result = formatEvent(event, new Map());
-      expect(result).toBe("");
-    });
-  });
-
-  describe("WorkflowRunEvent", () => {
-    test("formats successful workflow", () => {
-      const event: WorkflowRunEvent = {
-        ...baseEvent,
-        type: "WorkflowRunEvent",
-        payload: {
-          action: "completed",
-          workflow_run: {
-            name: "CI",
-            conclusion: "success",
-            head_branch: "main",
-            html_url: "https://github.com/owner/repo/actions/runs/123",
-          },
-        },
-      };
-
-      const result = formatEvent(event, new Map());
-      expect(result).toContain("✅");
-      expect(result).toContain("CI Passed");
-      expect(result).toContain("main");
-    });
-
-    test("formats failed workflow", () => {
-      const event: WorkflowRunEvent = {
-        ...baseEvent,
-        type: "WorkflowRunEvent",
-        payload: {
-          action: "completed",
-          workflow_run: {
-            name: "Tests",
-            conclusion: "failure",
-            head_branch: "feature",
-            html_url: "https://github.com/owner/repo/actions/runs/456",
-          },
-        },
-      };
-
-      const result = formatEvent(event, new Map());
-      expect(result).toContain("❌");
-      expect(result).toContain("CI Failed");
-    });
-
-    test("returns empty string for non-completed actions", () => {
-      const event: WorkflowRunEvent = {
-        ...baseEvent,
-        type: "WorkflowRunEvent",
-        payload: {
-          action: "requested",
         },
       };
 

@@ -49,28 +49,15 @@ function actionSchema<T extends readonly string[]>(
     );
 }
 
-/** PR actions for Events API (includes `merged` which webhooks sends as `closed` with merged flag) */
+/** PR actions for Events API */
 const PR_ACTIONS = [
+  "opened",
+  "closed",
+  "reopened",
   "assigned",
   "unassigned",
   "labeled",
   "unlabeled",
-  "opened",
-  "edited",
-  "closed",
-  "reopened",
-  "synchronize",
-  "converted_to_draft",
-  "locked",
-  "unlocked",
-  "milestoned",
-  "demilestoned",
-  "ready_for_review",
-  "review_requested",
-  "review_request_removed",
-  "auto_merge_enabled",
-  "auto_merge_disabled",
-  "merged",
 ] as const;
 
 /**
@@ -103,26 +90,7 @@ export interface PullRequestEvent extends BaseGitHubEvent {
 }
 
 /** Issue actions for Events API */
-const ISSUES_ACTIONS = [
-  "opened",
-  "edited",
-  "deleted",
-  "transferred",
-  "pinned",
-  "unpinned",
-  "closed",
-  "reopened",
-  "assigned",
-  "unassigned",
-  "labeled",
-  "unlabeled",
-  "locked",
-  "unlocked",
-  "milestoned",
-  "demilestoned",
-  "typed",
-  "untyped",
-] as const;
+const ISSUES_ACTIONS = ["opened", "closed", "reopened"] as const;
 
 /**
  * Issues Event Payload
@@ -152,15 +120,11 @@ export interface IssuesEvent extends BaseGitHubEvent {
  * Push Event Payload
  */
 export const PushPayloadSchema = z.object({
+  repository_id: z.number().optional(),
+  push_id: z.number().optional(),
   ref: z.string().optional(),
-  commits: z
-    .array(
-      z.object({
-        sha: z.string(),
-        message: z.string(),
-      })
-    )
-    .optional(),
+  head: z.string().optional(),
+  before: z.string().optional(),
 });
 
 export type PushPayload = z.infer<typeof PushPayloadSchema>;
@@ -170,16 +134,8 @@ export interface PushEvent extends BaseGitHubEvent {
   payload: PushPayload;
 }
 
-/** Release actions */
-const RELEASE_ACTIONS = [
-  "published",
-  "unpublished",
-  "created",
-  "edited",
-  "deleted",
-  "prereleased",
-  "released",
-] as const;
+/** Release actions for Events API */
+const RELEASE_ACTIONS = ["published"] as const;
 
 /**
  * Release Event Payload
@@ -205,33 +161,8 @@ export interface ReleaseEvent extends BaseGitHubEvent {
   payload: ReleasePayload;
 }
 
-/** Workflow run actions */
-const WORKFLOW_RUN_ACTIONS = ["requested", "in_progress", "completed"] as const;
-
-/**
- * Workflow Run Event Payload
- */
-export const WorkflowRunPayloadSchema = z.object({
-  action: actionSchema(WORKFLOW_RUN_ACTIONS, "WorkflowRunEvent"),
-  workflow_run: z
-    .object({
-      name: z.string(),
-      conclusion: z.string().nullable(),
-      head_branch: z.string(),
-      html_url: z.string(),
-    })
-    .optional(),
-});
-
-export type WorkflowRunPayload = z.infer<typeof WorkflowRunPayloadSchema>;
-
-export interface WorkflowRunEvent extends BaseGitHubEvent {
-  type: "WorkflowRunEvent";
-  payload: WorkflowRunPayload;
-}
-
-/** Issue comment actions */
-const ISSUE_COMMENT_ACTIONS = ["created", "edited", "deleted"] as const;
+/** Issue comment actions for Events API */
+const ISSUE_COMMENT_ACTIONS = ["created"] as const;
 
 /**
  * Issue Comment Event Payload
@@ -261,8 +192,8 @@ export interface IssueCommentEvent extends BaseGitHubEvent {
   payload: IssueCommentPayload;
 }
 
-/** PR Review actions for Events API */
-const PR_REVIEW_ACTIONS = ["submitted", "edited", "dismissed"] as const;
+/** PR Review actions for Events API (Webhooks uses "submitted"/"edited" instead) */
+const PR_REVIEW_ACTIONS = ["created", "updated", "dismissed"] as const;
 
 /**
  * Pull Request Review Event Payload
@@ -331,8 +262,8 @@ export interface DeleteEvent extends BaseGitHubEvent {
   payload: DeletePayload;
 }
 
-/** PR review comment actions */
-const PR_REVIEW_COMMENT_ACTIONS = ["created", "edited", "deleted"] as const;
+/** PR review comment actions for Events API */
+const PR_REVIEW_COMMENT_ACTIONS = ["created"] as const;
 
 /**
  * Pull Request Review Comment Event Payload (code review comments)
@@ -389,10 +320,14 @@ export interface WatchEvent extends BaseGitHubEvent {
   payload: WatchPayload;
 }
 
+/** Fork actions for Events API */
+const FORK_ACTIONS = ["forked"] as const;
+
 /**
  * Fork Event Payload
  */
 export const ForkPayloadSchema = z.object({
+  action: actionSchema(FORK_ACTIONS, "ForkEvent"),
   forkee: z
     .object({
       full_name: z.string(),
@@ -416,7 +351,6 @@ export type GitHubEvent =
   | IssuesEvent
   | PushEvent
   | ReleaseEvent
-  | WorkflowRunEvent
   | IssueCommentEvent
   | PullRequestReviewEvent
   | CreateEvent
@@ -430,7 +364,6 @@ const SUPPORTED_EVENT_TYPES = [
   "IssuesEvent",
   "PushEvent",
   "ReleaseEvent",
-  "WorkflowRunEvent",
   "IssueCommentEvent",
   "PullRequestReviewEvent",
   "CreateEvent",
@@ -462,10 +395,6 @@ export const GitHubEventSchema = z.discriminatedUnion("type", [
   BaseEventSchema.extend({
     type: z.literal("ReleaseEvent"),
     payload: ReleasePayloadSchema,
-  }),
-  BaseEventSchema.extend({
-    type: z.literal("WorkflowRunEvent"),
-    payload: WorkflowRunPayloadSchema,
   }),
   BaseEventSchema.extend({
     type: z.literal("IssueCommentEvent"),
