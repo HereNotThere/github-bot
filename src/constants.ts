@@ -93,3 +93,9 @@ export const OAUTH_TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1000;
  * How often to remove expired OAuth state entries from the database.
  */
 export const OAUTH_STATE_CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
+
+/**
+ * Default expiration for thread and message mappings (30 days)
+ * After this period, mappings are cleaned up and threads can no longer be grouped.
+ */
+export const MESSAGE_MAPPING_EXPIRY_DAYS = 30;

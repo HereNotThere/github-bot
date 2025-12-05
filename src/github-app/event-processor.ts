@@ -16,11 +16,15 @@ import {
   formatWorkflowRun,
 } from "../formatters/webhook-events";
 import type {
+  DeliveryAction,
+  EntityContext,
+  MessageDeliveryService,
+  ThreadingContext,
+} from "../services/message-delivery-service";
+import type {
   BranchFilter,
   SubscriptionService,
 } from "../services/subscription-service";
-import type { AnchorType, ThreadService } from "../services/thread-service";
-import type { TownsBot } from "../types/bot";
 import type {
   CreatePayload,
   DeletePayload,
@@ -37,55 +41,32 @@ import type {
 } from "../types/webhooks";
 
 /**
- * Threading context for events that can be grouped into threads
- */
-interface ThreadingContext {
-  anchorType: AnchorType;
-  anchorNumber: number;
-  isAnchor: boolean; // true for "opened" events that start a thread
-}
-
-/**
  * EventProcessor - Routes webhook events to formatters and sends to subscribed channels
  *
  * Maps webhook event types to subscription event types and filters by user preferences.
- * Supports threading: PR/issue opened events start threads, follow-up events reply to them.
+ * Delegates message delivery (threading, editing, deleting) to MessageDeliveryService.
  */
 export class EventProcessor {
-  private bot: TownsBot;
-  private subscriptionService: SubscriptionService;
-  private threadService: ThreadService;
-
   constructor(
-    bot: TownsBot,
-    subscriptionService: SubscriptionService,
-    threadService: ThreadService
-  ) {
-    this.bot = bot;
-    this.subscriptionService = subscriptionService;
-    this.threadService = threadService;
-  }
+    private subscriptionService: SubscriptionService,
+    private messageDeliveryService: MessageDeliveryService
+  ) {}
 
   /**
    * Generic helper to process GitHub webhook events
-   * Handles channel filtering, message formatting, and distribution
-   *
-   * @param event - The webhook event payload
-   * @param eventType - The subscription event type for filtering
-   * @param formatter - Function to format the event as a message
-   * @param logContext - Optional context string for logging
-   * @param branchContext - Optional branch context for branch-specific filtering
-   * @param threadingContext - Optional threading context for PR/issue grouping
+   * Handles channel filtering and delegates delivery to MessageDeliveryService
    */
   private async processEvent<
     T extends { repository: { full_name: string; default_branch: string } },
   >(
     event: T,
     eventType: EventType,
+    action: "create" | "edit" | "delete" = "create",
     formatter: (event: T, isThreadReply?: boolean) => string,
     logContext?: string,
     branchContext?: { branch: string },
-    threadingContext?: ThreadingContext
+    threadingContext?: ThreadingContext,
+    entityContext?: EntityContext
   ) {
     if (logContext) {
       console.log(`Processing ${logContext}`);
@@ -130,58 +111,20 @@ export class EventProcessor {
       return;
     }
 
-    // Determine if this is a follow-up event (not an anchor)
-    const isFollowUpEvent = !!threadingContext && !threadingContext.isAnchor;
+    // Deliver to all interested channels
+    const deliveryPromises = interestedChannels.map(channel =>
+      this.messageDeliveryService.deliver({
+        spaceId: channel.spaceId,
+        channelId: channel.channelId,
+        repoFullName,
+        action,
+        threadingContext,
+        entityContext,
+        formatter: isThreadReply => formatter(event, isThreadReply),
+      })
+    );
 
-    // Send to all interested channels
-    // For threaded events, look up or create thread mappings per channel
-    const sendPromises = interestedChannels.map(async channel => {
-      const { spaceId, channelId } = channel;
-
-      try {
-        // For follow-up events, look up existing thread (undefined if not found or anchor)
-        const threadId = isFollowUpEvent
-          ? ((await this.threadService.getThreadId(
-              spaceId,
-              channelId,
-              repoFullName,
-              threadingContext.anchorType,
-              threadingContext.anchorNumber
-            )) ?? undefined)
-          : undefined;
-
-        // Format message - use compact format only if we're actually replying to a thread
-        const message = formatter(event, !!threadId);
-
-        if (!message) {
-          console.log(
-            "Formatter returned empty message (event action not handled)"
-          );
-          return;
-        }
-
-        // Send message (threaded for follow-ups, top-level for anchors/no-context)
-        const { eventId } = await this.bot.sendMessage(channelId, message, {
-          threadId,
-        });
-
-        // Store thread mapping for anchor events
-        if (threadingContext?.isAnchor && eventId) {
-          await this.threadService.storeThread({
-            spaceId,
-            channelId,
-            repoFullName,
-            anchorType: threadingContext.anchorType,
-            anchorNumber: threadingContext.anchorNumber,
-            threadEventId: eventId,
-          });
-        }
-      } catch (error) {
-        console.error(`Failed to send to ${channel.channelId}:`, error);
-      }
-    });
-
-    await Promise.allSettled(sendPromises);
+    await Promise.allSettled(deliveryPromises);
   }
 
   /**
@@ -195,6 +138,7 @@ export class EventProcessor {
     await this.processEvent(
       event,
       "pr",
+      "create",
       formatPullRequest,
       `PR event: ${action} - ${repository.full_name}#${pull_request.number}`,
       { branch: baseBranch },
@@ -217,6 +161,7 @@ export class EventProcessor {
     await this.processEvent(
       event,
       "commits",
+      "create",
       formatPush,
       `push event: ${repository.full_name} - ${ref} (${commits?.length || 0} commits)`,
       { branch }
@@ -232,6 +177,7 @@ export class EventProcessor {
     await this.processEvent(
       event,
       "issues",
+      "create",
       formatIssue,
       `issue event: ${action} - ${repository.full_name}#${issue.number}`,
       undefined,
@@ -251,6 +197,7 @@ export class EventProcessor {
     await this.processEvent(
       event,
       "releases",
+      "create",
       formatRelease,
       `release event: ${event.action} - ${repository.full_name} ${release.tag_name}`
     );
@@ -267,6 +214,7 @@ export class EventProcessor {
     await this.processEvent(
       event,
       "ci",
+      "create",
       formatWorkflowRun,
       `workflow run event: ${event.action} - ${repository.full_name} ${workflow_run.name}`,
       { branch }
@@ -279,20 +227,31 @@ export class EventProcessor {
    * Note: GitHub fires issue_comment for both issues AND PRs
    */
   async onIssueComment(event: IssueCommentPayload) {
-    const { issue, repository } = event;
+    const { action, issue, comment, repository } = event;
     // Determine if this is a comment on a PR or an issue
     // GitHub includes pull_request field in the issue object for PR comments
     const isPrComment = "pull_request" in issue && issue.pull_request != null;
+    const deliveryAction = toDeliveryAction(action);
+    if (!deliveryAction) return;
+
     await this.processEvent(
       event,
       "comments",
+      deliveryAction,
       formatIssueComment,
-      `issue comment event: ${event.action} - ${repository.full_name}#${issue.number}`,
+      `issue comment event: ${action} - ${repository.full_name}#${issue.number}`,
       undefined,
       {
         anchorType: isPrComment ? "pr" : "issue",
         anchorNumber: issue.number,
-        isAnchor: false, // Comments are never anchors
+        isAnchor: false,
+      },
+      {
+        githubEntityType: "comment",
+        githubEntityId: String(comment.id),
+        parentType: isPrComment ? "pr" : "issue",
+        parentNumber: issue.number,
+        githubUpdatedAt: new Date(comment.updated_at),
       }
     );
   }
@@ -303,18 +262,32 @@ export class EventProcessor {
    * Threading: reviews thread to parent PR
    */
   async onPullRequestReview(event: PullRequestReviewPayload) {
-    const { pull_request, repository } = event;
+    const { action, review, pull_request, repository } = event;
     const baseBranch = pull_request.base.ref;
+
+    const mappingAction =
+      action === "submitted" ? "create" : action === "edited" ? "edit" : null;
+
+    if (!mappingAction) return;
+
     await this.processEvent(
       event,
       "reviews",
+      mappingAction,
       formatPullRequestReview,
-      `PR review event: ${event.action} - ${repository.full_name}#${pull_request.number}`,
+      `PR review event: ${action} - ${repository.full_name}#${pull_request.number}`,
       { branch: baseBranch },
       {
         anchorType: "pr",
         anchorNumber: pull_request.number,
-        isAnchor: false, // Reviews are never anchors
+        isAnchor: false,
+      },
+      {
+        githubEntityType: "review",
+        githubEntityId: String(review.id),
+        parentType: "pr",
+        parentNumber: pull_request.number,
+        githubUpdatedAt: new Date(review.submitted_at ?? Date.now()),
       }
     );
   }
@@ -324,18 +297,29 @@ export class EventProcessor {
    * Branch filter applies to the PR's base branch (merge target)
    */
   async onPullRequestReviewComment(event: PullRequestReviewCommentPayload) {
-    const { pull_request, repository } = event;
+    const { action, comment, pull_request, repository } = event;
     const baseBranch = pull_request.base.ref;
+    const deliveryAction = toDeliveryAction(action);
+    if (!deliveryAction) return;
+
     await this.processEvent(
       event,
       "review_comments",
+      deliveryAction,
       formatPullRequestReviewComment,
-      `PR review comment event: ${event.action} - ${repository.full_name}#${pull_request.number}`,
+      `PR review comment event: ${action} - ${repository.full_name}#${pull_request.number}`,
       { branch: baseBranch },
       {
         anchorType: "pr",
         anchorNumber: pull_request.number,
         isAnchor: false,
+      },
+      {
+        githubEntityType: "review_comment",
+        githubEntityId: String(comment.id),
+        parentType: "pr",
+        parentNumber: pull_request.number,
+        githubUpdatedAt: new Date(comment.updated_at),
       }
     );
   }
@@ -353,11 +337,11 @@ export class EventProcessor {
         ? formatCreate(e as CreatePayload)
         : formatDelete(e as DeletePayload);
 
-    // ref is the branch/tag name being created or deleted
     const branch = event.ref;
     await this.processEvent(
       event,
       "branches",
+      "create",
       formatter,
       `${eventType} event: ${event.repository.full_name}`,
       { branch }
@@ -371,6 +355,7 @@ export class EventProcessor {
     await this.processEvent(
       event,
       "forks",
+      "create",
       formatFork,
       `fork event: ${event.repository.full_name}`
     );
@@ -383,6 +368,7 @@ export class EventProcessor {
     await this.processEvent(
       event,
       "stars",
+      "create",
       formatWatch,
       `watch event: ${event.repository.full_name}`
     );
@@ -391,28 +377,28 @@ export class EventProcessor {
 
 /**
  * Check if a branch matches a branch filter pattern
- *
- * @param branch - The actual branch name (e.g., "main", "feature/foo")
- * @param filter - Branch filter value from subscription
- * @param defaultBranch - Repository's default branch for null filter
- * @returns true if the branch should be included
  */
 export function matchesBranchFilter(
   branch: string,
   filter: BranchFilter,
   defaultBranch: string
 ): boolean {
-  // null = default branch only
   if (filter === null) {
     return branch === defaultBranch;
   }
 
-  // "all" = all branches
   if (filter === "all") {
     return true;
   }
 
-  // Specific patterns (comma-separated, glob support)
   const patterns = filter.split(",").map(p => p.trim());
   return patterns.some(pattern => isMatch(branch, pattern));
+}
+
+/** Map GitHub webhook action to delivery action */
+function toDeliveryAction(action: string): DeliveryAction | null {
+  if (action === "created") return "create";
+  if (action === "edited") return "edit";
+  if (action === "deleted") return "delete";
+  return null;
 }

@@ -231,6 +231,57 @@ export const pendingSubscriptions = pgTable(
 );
 
 /**
+ * Maps GitHub entities (comments, reviews, anchors) to Towns message IDs
+ * Enables editing/deleting Towns messages when GitHub content changes
+ */
+export const messageMappings = pgTable(
+  "message_mappings",
+  {
+    // Composite primary key columns
+    spaceId: text("space_id").notNull(),
+    channelId: text("channel_id").notNull(),
+    repoFullName: text("repo_full_name").notNull(),
+    githubEntityType: text("github_entity_type").notNull(), // 'pr' | 'issue' | 'comment' | 'review' | 'review_comment'
+    githubEntityId: text("github_entity_id").notNull(), // GitHub's ID (number for pr/issue, id for comments/reviews)
+
+    // Parent PR/issue (for comments/reviews)
+    parentType: text("parent_type"), // 'pr' | 'issue' | null
+    parentNumber: integer("parent_number"),
+
+    // Towns message reference
+    townsMessageId: text("towns_message_id").notNull(),
+
+    // Ordering (prevent overwriting newer state with older webhook)
+    githubUpdatedAt: timestamp("github_updated_at", { withTimezone: true }),
+
+    // Lifecycle
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  table => ({
+    pk: primaryKey({
+      columns: [
+        table.spaceId,
+        table.channelId,
+        table.repoFullName,
+        table.githubEntityType,
+        table.githubEntityId,
+      ],
+    }),
+    entityTypeCheck: check(
+      "entity_type_check",
+      sql`${table.githubEntityType} IN ('pr', 'issue', 'comment', 'review', 'review_comment')`
+    ),
+    parentTypeCheck: check(
+      "parent_type_check",
+      sql`${table.parentType} IS NULL OR ${table.parentType} IN ('pr', 'issue')`
+    ),
+    // Cleanup job index
+    expiresIndex: index("idx_message_mappings_expires").on(table.expiresAt),
+  })
+);
+
+/**
  * Maps GitHub PR/issue events to Towns thread IDs for grouping related events
  * Enables threading: PR opened events start threads, subsequent events reply
  */

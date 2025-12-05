@@ -167,16 +167,22 @@ export function formatIssueComment(
 ): string {
   const { action, issue, comment, repository } = payload;
 
-  if (action === "created") {
+  if (action === "created" || action === "edited") {
     const preview = extractPreview(comment.body);
     const user = comment.user?.login || "unknown";
+    const editedIndicator = action === "edited" ? " _(edited)_" : "";
 
     if (isThreadReply) {
-      return `💬 "${preview}" 👤 ${user} 🔗 ${comment.html_url}`;
+      return `💬 "${preview}"${editedIndicator} 👤 ${user} 🔗 ${comment.html_url}`;
     }
 
+    const header =
+      action === "edited"
+        ? `💬 **Comment Edited on Issue #${issue.number}**`
+        : `💬 **New Comment on Issue #${issue.number}**`;
+
     return (
-      `💬 **New Comment on Issue #${issue.number}**\n` +
+      `${header}\n` +
       `**${repository.full_name}**\n\n` +
       `"${preview}"\n` +
       `👤 ${user}\n` +
@@ -193,23 +199,29 @@ export function formatPullRequestReview(
 ): string {
   const { action, review, pull_request, repository } = payload;
 
-  if (action === "submitted") {
+  if (action === "submitted" || action === "edited") {
     let emoji = "👀";
     if (review.state === "approved") emoji = "✅";
     if (review.state === "changes_requested") emoji = "🔄";
 
     const state = review.state.replace("_", " ");
     const user = review.user?.login || "unknown";
+    const editedIndicator = action === "edited" ? " _(edited)_" : "";
 
     if (isThreadReply) {
       const preview = extractPreview(review.body);
       return preview
-        ? `${emoji} ${state}: "${preview}" 👤 ${user} 🔗 ${review.html_url}`
-        : `${emoji} ${state} 👤 ${user} 🔗 ${review.html_url}`;
+        ? `${emoji} ${state}: "${preview}"${editedIndicator} 👤 ${user} 🔗 ${review.html_url}`
+        : `${emoji} ${state}${editedIndicator} 👤 ${user} 🔗 ${review.html_url}`;
     }
 
+    const header =
+      action === "edited"
+        ? `${emoji} **PR Review Edited: ${state}**`
+        : `${emoji} **PR Review: ${state}**`;
+
     return (
-      `${emoji} **PR Review: ${state}**\n` +
+      `${header}\n` +
       `**${repository.full_name}** #${pull_request.number}\n\n` +
       `**${pull_request.title}**\n` +
       `👤 ${user}\n` +
@@ -226,16 +238,22 @@ export function formatPullRequestReviewComment(
 ): string {
   const { action, comment, pull_request, repository } = payload;
 
-  if (action === "created") {
+  if (action === "created" || action === "edited") {
     const preview = extractPreview(comment.body);
     const user = comment.user?.login || "unknown";
+    const editedIndicator = action === "edited" ? " _(edited)_" : "";
 
     if (isThreadReply) {
-      return `💬 "${preview}" 👤 ${user} 🔗 ${comment.html_url}`;
+      return `💬 "${preview}"${editedIndicator} 👤 ${user} 🔗 ${comment.html_url}`;
     }
 
+    const header =
+      action === "edited"
+        ? `💬 **Review Comment Edited on PR #${pull_request.number}**`
+        : `💬 **Review Comment on PR #${pull_request.number}**`;
+
     return (
-      `💬 **Review Comment on PR #${pull_request.number}**\n` +
+      `${header}\n` +
       `**${repository.full_name}**\n\n` +
       `"${preview}"\n` +
       `👤 ${user}\n` +
