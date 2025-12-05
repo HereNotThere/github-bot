@@ -74,18 +74,7 @@ export class MessageDeliveryService {
     } = params;
 
     try {
-      // Delete doesn't need thread lookup or formatting
-      if (action === "delete" && entityContext) {
-        await this.handleDelete(
-          spaceId,
-          channelId,
-          repoFullName,
-          entityContext
-        );
-        return;
-      }
-
-      // Thread lookup for edit/create (determines compact format)
+      // Thread lookup (determines compact format for edit/create)
       const isFollowUpEvent = !!threadingContext && !threadingContext.isAnchor;
       const threadId =
         isFollowUpEvent && threadingContext
@@ -98,33 +87,58 @@ export class MessageDeliveryService {
             )) ?? undefined)
           : undefined;
 
-      const message = formatter(!!threadId);
-      if (!message) {
-        console.log("Formatter returned empty message");
-        return;
-      }
+      switch (action) {
+        case "delete":
+          if (!entityContext) {
+            console.log("Delete action requires entityContext");
+            return;
+          }
+          await this.handleDelete(
+            spaceId,
+            channelId,
+            repoFullName,
+            entityContext
+          );
+          return;
 
-      if (action === "edit" && entityContext) {
-        await this.handleEdit(
-          spaceId,
-          channelId,
-          repoFullName,
-          entityContext,
-          message
-        );
-        return;
-      }
+        case "edit": {
+          if (!entityContext) {
+            console.log("Edit action requires entityContext");
+            return;
+          }
+          const message = formatter(!!threadId);
+          if (!message) {
+            console.log("Formatter returned empty message");
+            return;
+          }
+          await this.handleEdit(
+            spaceId,
+            channelId,
+            repoFullName,
+            entityContext,
+            message
+          );
+          return;
+        }
 
-      // Handle create action
-      await this.handleCreate(
-        spaceId,
-        channelId,
-        repoFullName,
-        threadingContext,
-        entityContext,
-        threadId,
-        message
-      );
+        case "create":
+        default: {
+          const message = formatter(!!threadId);
+          if (!message) {
+            console.log("Formatter returned empty message");
+            return;
+          }
+          await this.handleCreate(
+            spaceId,
+            channelId,
+            repoFullName,
+            threadingContext,
+            entityContext,
+            threadId,
+            message
+          );
+        }
+      }
     } catch (error) {
       console.error(`Failed to ${action} message for ${channelId}:`, error);
     }
@@ -258,6 +272,10 @@ export class MessageDeliveryService {
   // Thread Management (from ThreadService)
   // ============================================================================
 
+  /**
+   * Get thread ID for an anchor (PR/issue).
+   * Uses gt(expiresAt, now) so expired rows are ignored even before cleanup runs.
+   */
   private async getThreadId(
     spaceId: string,
     channelId: string,
@@ -324,6 +342,10 @@ export class MessageDeliveryService {
   // Message Mapping Management (from MessageMappingService)
   // ============================================================================
 
+  /**
+   * Get Towns message ID for a GitHub entity.
+   * Uses gt(expiresAt, now) so expired rows are ignored even before cleanup runs.
+   */
   private async getMessageId(
     spaceId: string,
     channelId: string,
@@ -443,23 +465,25 @@ export class MessageDeliveryService {
   // ============================================================================
 
   /**
-   * Delete expired records from both tables
+   * Delete expired records from both tables.
+   * Uses lt(expiresAt, now) to clean up rows that lookups already ignore.
    */
   async cleanupExpired(): Promise<{ threads: number; messages: number }> {
     const now = new Date();
 
-    const threadResults = await db
-      .delete(eventThreads)
-      .where(lt(eventThreads.expiresAt, now))
-      .returning({ id: eventThreads.id });
-
-    const messageResults = await db
-      .delete(messageMappings)
-      .where(lt(messageMappings.expiresAt, now))
-      .returning({
-        channelId: messageMappings.channelId,
-        entityId: messageMappings.githubEntityId,
-      });
+    const [threadResults, messageResults] = await Promise.all([
+      db
+        .delete(eventThreads)
+        .where(lt(eventThreads.expiresAt, now))
+        .returning({ id: eventThreads.id }),
+      db
+        .delete(messageMappings)
+        .where(lt(messageMappings.expiresAt, now))
+        .returning({
+          channelId: messageMappings.channelId,
+          entityId: messageMappings.githubEntityId,
+        }),
+    ]);
 
     return {
       threads: threadResults.length,
