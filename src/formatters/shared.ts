@@ -74,21 +74,33 @@ export function getPrEventHeader(action: string, merged: boolean): string {
 }
 
 /**
- * Get emoji for issue event based on action
+ * Get emoji for issue event based on action and state reason
  */
-export function getIssueEventEmoji(action: string): string {
+export function getIssueEventEmoji(
+  action: string,
+  stateReason?: string | null
+): string {
   if (action === "opened") return "🐛";
-  if (action === "closed") return "✅";
+  if (action === "closed") {
+    if (stateReason === "not_planned") return "⚪";
+    return "✅"; // completed or unspecified
+  }
   if (action === "reopened") return "🔄";
   return "";
 }
 
 /**
- * Get header text for issue event based on action
+ * Get header text for issue event based on action and state reason
  */
-export function getIssueEventHeader(action: string): string {
+export function getIssueEventHeader(
+  action: string,
+  stateReason?: string | null
+): string {
   if (action === "opened") return "Issue Opened";
-  if (action === "closed") return "Issue Closed";
+  if (action === "closed") {
+    if (stateReason === "not_planned") return "Issue Closed as Not Planned";
+    return "Issue Closed"; // completed or unspecified
+  }
   if (action === "reopened") return "Issue Reopened";
   return "";
 }
