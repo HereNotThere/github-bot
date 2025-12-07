@@ -58,6 +58,7 @@ export function getPrEventEmoji(action: string, merged: boolean): string {
   if (action === "opened") return "🔔";
   if (action === "closed" && merged) return "✅";
   if (action === "closed" && !merged) return "❌";
+  if (action === "reopened") return "🔄";
   return "";
 }
 
@@ -68,5 +69,26 @@ export function getPrEventHeader(action: string, merged: boolean): string {
   if (action === "opened") return "Pull Request Opened";
   if (action === "closed" && merged) return "Pull Request Merged";
   if (action === "closed" && !merged) return "Pull Request Closed";
+  if (action === "reopened") return "Pull Request Reopened";
+  return "";
+}
+
+/**
+ * Get emoji for issue event based on action
+ */
+export function getIssueEventEmoji(action: string): string {
+  if (action === "opened") return "🐛";
+  if (action === "closed") return "✅";
+  if (action === "reopened") return "🔄";
+  return "";
+}
+
+/**
+ * Get header text for issue event based on action
+ */
+export function getIssueEventHeader(action: string): string {
+  if (action === "opened") return "Issue Opened";
+  if (action === "closed") return "Issue Closed";
+  if (action === "reopened") return "Issue Reopened";
   return "";
 }

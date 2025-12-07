@@ -212,7 +212,11 @@ export class MessageDeliveryService {
       spaceId,
       channelId,
       repoFullName,
-      ...entityContext,
+      githubEntityType,
+      githubEntityId,
+      parentType: entityContext.parentType,
+      parentNumber: entityContext.parentNumber,
+      githubUpdatedAt,
       townsMessageId: existingMessageId,
     });
 

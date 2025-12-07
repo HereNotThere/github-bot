@@ -17,7 +17,13 @@ import type {
   WatchPayload,
   WorkflowRunPayload,
 } from "../types/webhooks";
-import { buildMessage, getPrEventEmoji, getPrEventHeader } from "./shared";
+import {
+  buildMessage,
+  getIssueEventEmoji,
+  getIssueEventHeader,
+  getPrEventEmoji,
+  getPrEventHeader,
+} from "./shared";
 
 /**
  * Extract a clean preview from markdown/HTML content
@@ -48,10 +54,10 @@ export function formatPullRequest(payload: PullRequestPayload): string {
 
   if (!emoji || !header) return "";
 
-  const metadata =
-    action === "opened"
-      ? [`📊 +${pull_request.additions || 0} -${pull_request.deletions || 0}`]
-      : undefined;
+  // Always include stats for anchor messages
+  const metadata = [
+    `📊 +${pull_request.additions || 0} -${pull_request.deletions || 0}`,
+  ];
 
   return buildMessage({
     emoji,
@@ -68,18 +74,10 @@ export function formatPullRequest(payload: PullRequestPayload): string {
 export function formatIssue(payload: IssuesPayload): string {
   const { action, issue, repository } = payload;
 
-  let emoji: string;
-  let header: string;
+  const emoji = getIssueEventEmoji(action);
+  const header = getIssueEventHeader(action);
 
-  if (action === "opened") {
-    emoji = "🐛";
-    header = "Issue Opened";
-  } else if (action === "closed") {
-    emoji = "✅";
-    header = "Issue Closed";
-  } else {
-    return "";
-  }
+  if (!emoji || !header) return "";
 
   return buildMessage({
     emoji,
@@ -163,7 +161,7 @@ export function formatWorkflowRun(payload: WorkflowRunPayload): string {
 
 export function formatIssueComment(
   payload: IssueCommentPayload,
-  isThreadReply?: boolean
+  isThreadReply: boolean
 ): string {
   const { action, issue, comment, repository } = payload;
 
@@ -195,7 +193,7 @@ export function formatIssueComment(
 
 export function formatPullRequestReview(
   payload: PullRequestReviewPayload,
-  isThreadReply?: boolean
+  isThreadReply: boolean
 ): string {
   const { action, review, pull_request, repository } = payload;
 
@@ -234,7 +232,7 @@ export function formatPullRequestReview(
 
 export function formatPullRequestReviewComment(
   payload: PullRequestReviewCommentPayload,
-  isThreadReply?: boolean
+  isThreadReply: boolean
 ): string {
   const { action, comment, pull_request, repository } = payload;
 

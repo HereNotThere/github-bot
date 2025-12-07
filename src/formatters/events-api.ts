@@ -10,7 +10,13 @@
 
 import type { GitHubPullRequest } from "../api/github-client";
 import type { GitHubEvent } from "../types/events-api";
-import { buildMessage, getPrEventEmoji, getPrEventHeader } from "./shared";
+import {
+  buildMessage,
+  getIssueEventEmoji,
+  getIssueEventHeader,
+  getPrEventEmoji,
+  getPrEventHeader,
+} from "./shared";
 
 /**
  * Format GitHub Events API events into human-readable messages
@@ -68,18 +74,10 @@ export function formatEvent(
 
       if (!issue) return "";
 
-      let emoji: string;
-      let header: string;
+      const emoji = getIssueEventEmoji(action);
+      const header = getIssueEventHeader(action);
 
-      if (action === "opened") {
-        emoji = "🐛";
-        header = "Issue Opened";
-      } else if (action === "closed") {
-        emoji = "✅";
-        header = "Issue Closed";
-      } else {
-        return "";
-      }
+      if (!emoji || !header) return "";
 
       return buildMessage({
         emoji,
