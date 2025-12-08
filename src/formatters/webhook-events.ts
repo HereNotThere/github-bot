@@ -74,8 +74,8 @@ export function formatPullRequest(payload: PullRequestPayload): string {
 export function formatIssue(payload: IssuesPayload): string {
   const { action, issue, repository } = payload;
 
-  const emoji = getIssueEventEmoji(action);
-  const header = getIssueEventHeader(action);
+  const emoji = getIssueEventEmoji(action, issue.state_reason);
+  const header = getIssueEventHeader(action, issue.state_reason);
 
   if (!emoji || !header) return "";
 

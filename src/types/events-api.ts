@@ -102,6 +102,9 @@ export const IssuesPayloadSchema = z.object({
       number: z.number(),
       title: z.string(),
       html_url: z.string(),
+      state_reason: z
+        .enum(["completed", "not_planned", "duplicate", "reopened"])
+        .nullish(),
       user: z.object({
         login: z.string(),
       }),
