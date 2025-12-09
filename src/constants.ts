@@ -39,9 +39,12 @@ export const ALLOWED_EVENT_TYPES_SET: ReadonlySet<EventType> = new Set(
 );
 
 /**
- * Event types that support branch filtering.
- * These events have branch context and can be filtered by --branches flag.
- * Other events (issues, releases, comments, forks, stars) are not branch-specific.
+ * Event types that MUST have branch context for filtering.
+ * These events always have a branch and can be filtered by --branches flag.
+ *
+ * Note: "comments" is intentionally excluded. It covers both issue comments
+ * (no branch context) and PR comments (branch resolved via cache/API).
+ * PR comments pass branch optionally for filtering; issue comments pass undefined.
  */
 export const BRANCH_FILTERABLE_EVENTS: readonly EventType[] = [
   "pr",

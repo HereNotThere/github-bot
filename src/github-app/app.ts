@@ -71,4 +71,12 @@ export class GitHubApp {
   getOAuth() {
     return this.app.oauth;
   }
+
+  /**
+   * Get installation-authenticated Octokit instance
+   * Used for API calls on behalf of a specific installation
+   */
+  getInstallationOctokit(installationId: number): Promise<Octokit> {
+    return this.app.getInstallationOctokit(installationId);
+  }
 }

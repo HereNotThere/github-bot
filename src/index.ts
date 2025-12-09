@@ -54,6 +54,7 @@ const messageDeliveryService = new MessageDeliveryService(bot);
 
 // Event processing service
 const eventProcessor = new EventProcessor(
+  githubApp,
   subscriptionService,
   messageDeliveryService
 );

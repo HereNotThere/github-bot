@@ -38,6 +38,16 @@ import type {
   WatchPayload,
   WorkflowRunPayload,
 } from "../types/webhooks";
+import type { GitHubApp } from "./app";
+
+/** Cache entry for PR base branch */
+interface PrBranchCacheEntry {
+  branch: string;
+  updatedAt: Date;
+}
+
+/** Lazy TTL for cache entries (24 hours) */
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 /**
  * EventProcessor - Routes webhook events to formatters and sends to subscribed channels
@@ -46,7 +56,11 @@ import type {
  * Delegates message delivery (threading, editing, deleting) to MessageDeliveryService.
  */
 export class EventProcessor {
+  /** Cache for PR base branches: "repo#prNumber" maps to branch and updatedAt */
+  private prBranchCache = new Map<string, PrBranchCacheEntry>();
+
   constructor(
+    private githubApp: GitHubApp,
     private subscriptionService: SubscriptionService,
     private messageDeliveryService: MessageDeliveryService
   ) {}
@@ -225,6 +239,19 @@ export class EventProcessor {
    */
   async onPullRequest(event: PullRequestPayload) {
     const { pull_request, repository, action } = event;
+
+    // Update branch cache (or delete on close)
+    if (action === "closed") {
+      this.deleteBranchCache(repository.full_name, pull_request.number);
+    } else {
+      this.updateBranchCache(
+        repository.full_name,
+        pull_request.number,
+        pull_request.base.ref,
+        new Date(pull_request.updated_at)
+      );
+    }
+
     await this.handleAnchorEvent({
       event,
       action,
@@ -309,6 +336,7 @@ export class EventProcessor {
    * Process an issue comment webhook event
    * Threading: comments thread to parent PR or issue
    * Note: GitHub fires issue_comment for both issues AND PRs
+   * Branch filtering: PR comments are filtered by PR's base branch
    */
   async onIssueComment(event: IssueCommentPayload) {
     const { action, issue, comment, repository } = event;
@@ -318,13 +346,33 @@ export class EventProcessor {
     const deliveryAction = toDeliveryAction(action);
     if (!deliveryAction) return;
 
+    // For PR comments, get branch for filtering (cache → API fallback)
+    let branch: string | undefined;
+    if (isPrComment) {
+      branch =
+        this.getCachedBranch(repository.full_name, issue.number) ?? undefined;
+      if (!branch && event.installation?.id) {
+        branch =
+          (await this.fetchPrBranch(
+            repository.full_name,
+            issue.number,
+            event.installation.id
+          )) ?? undefined;
+      }
+      if (!branch) {
+        console.log(
+          `Branch not resolved for PR comment ${repository.full_name}#${issue.number}, skipping branch filter`
+        );
+      }
+    }
+
     await this.processEvent(
       event,
       "comments",
       deliveryAction,
       formatIssueComment,
       `issue comment event: ${action} - ${repository.full_name}#${issue.number}`,
-      undefined,
+      branch,
       {
         githubEntityType: "comment",
         githubEntityId: String(comment.id),
@@ -343,6 +391,14 @@ export class EventProcessor {
    */
   async onPullRequestReview(event: PullRequestReviewPayload) {
     const { action, review, pull_request, repository } = event;
+
+    // Update branch cache
+    this.updateBranchCache(
+      repository.full_name,
+      pull_request.number,
+      pull_request.base.ref,
+      new Date(pull_request.updated_at)
+    );
 
     const mappingAction =
       action === "submitted" ? "create" : action === "edited" ? "edit" : null;
@@ -373,6 +429,15 @@ export class EventProcessor {
    */
   async onPullRequestReviewComment(event: PullRequestReviewCommentPayload) {
     const { action, comment, pull_request, repository } = event;
+
+    // Update branch cache
+    this.updateBranchCache(
+      repository.full_name,
+      pull_request.number,
+      pull_request.base.ref,
+      new Date(pull_request.updated_at)
+    );
+
     const deliveryAction = toDeliveryAction(action);
     if (!deliveryAction) return;
 
@@ -442,6 +507,69 @@ export class EventProcessor {
       formatWatch,
       `watch event: ${event.repository.full_name}`
     );
+  }
+
+  /** Update cache if incoming timestamp is newer or equal */
+  private updateBranchCache(
+    repo: string,
+    prNumber: number,
+    branch: string,
+    updatedAt: Date
+  ): void {
+    const key = `${repo}#${prNumber}`;
+    const existing = this.prBranchCache.get(key);
+    if (!existing || updatedAt >= existing.updatedAt) {
+      this.prBranchCache.set(key, { branch, updatedAt });
+    }
+  }
+
+  /** Delete cache entry (called on PR close) */
+  private deleteBranchCache(repo: string, prNumber: number): void {
+    this.prBranchCache.delete(`${repo}#${prNumber}`);
+  }
+
+  /** Get cached branch, or null if miss/stale */
+  private getCachedBranch(repo: string, prNumber: number): string | null {
+    const key = `${repo}#${prNumber}`;
+    const entry = this.prBranchCache.get(key);
+    if (!entry) return null;
+    // Lazy TTL: treat as miss if >24h old
+    if (Date.now() - entry.updatedAt.getTime() > CACHE_TTL_MS) {
+      this.prBranchCache.delete(key);
+      return null;
+    }
+    return entry.branch;
+  }
+
+  /** Fetch PR branch from API (fallback on cache miss) */
+  private async fetchPrBranch(
+    repo: string,
+    prNumber: number,
+    installationId: number
+  ): Promise<string | null> {
+    try {
+      const octokit =
+        await this.githubApp.getInstallationOctokit(installationId);
+      const [owner, repoName] = repo.split("/");
+      const { data: pr } = await octokit.request(
+        "GET /repos/{owner}/{repo}/pulls/{pull_number}",
+        { owner, repo: repoName, pull_number: prNumber }
+      );
+      // Cache the result
+      this.updateBranchCache(
+        repo,
+        prNumber,
+        pr.base.ref,
+        new Date(pr.updated_at)
+      );
+      return pr.base.ref;
+    } catch (error) {
+      console.warn(
+        `Failed to fetch PR #${prNumber} branch from ${repo}:`,
+        error
+      );
+      return null;
+    }
   }
 }
 

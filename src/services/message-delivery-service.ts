@@ -181,6 +181,22 @@ export class MessageDeliveryService {
     );
 
     if (!existingMessageId) {
+      // Retroactive anchor: if this is an anchor edit but no anchor exists,
+      // create it (happens when PR base branch changes to match filter)
+      if (entityContext.isAnchor) {
+        console.log(
+          `Creating retroactive anchor for ${githubEntityType}:${githubEntityId}`
+        );
+        await this.handleCreate(
+          spaceId,
+          channelId,
+          repoFullName,
+          entityContext,
+          undefined,
+          message
+        );
+        return;
+      }
       console.log(
         `No existing message to edit for ${githubEntityType}:${githubEntityId}`
       );
