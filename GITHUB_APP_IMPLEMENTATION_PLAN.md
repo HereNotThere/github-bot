@@ -352,6 +352,237 @@ Fetch and display result → SUCCESS
 }
 ```
 
+## Threading & Branch Filtering
+
+### Branch-Specific Event Filtering
+
+Filter events by branch to reduce noise from feature branches.
+
+**Syntax:**
+
+```bash
+/github subscribe owner/repo --events commits --branches main,develop
+/github subscribe owner/repo --events commits,ci --branches release/*
+/github subscribe owner/repo --events commits --branches all  # Opt-in to all branches (or *)
+```
+
+**Scope - Events affected by `--branches` flag:**
+
+| Event    | Branch Context             | Example Use Case         |
+| -------- | -------------------------- | ------------------------ |
+| commits  | Branch pushed to           | Only main/develop pushes |
+| ci       | Workflow trigger branch    | Only prod CI results     |
+| pr       | Base branch (merge target) | Only PRs targeting main  |
+| reviews  | PR's base branch           | Same as pr               |
+| branches | Branch created/deleted     | Only release/\* events   |
+
+**Not branch-specific:** issues, comments, releases, stars, forks
+
+**Design Decisions:**
+
+- Default: **Default branch only** (breaking change from current "all branches")
+- Patterns: **Glob support** (`release/*`, `feature/*`)
+- `--branches all` opts into all branches (preserves old behavior)
+
+**Storage:**
+
+New `branch_filter` column in `github_subscriptions`:
+
+- `NULL` = default branch only
+- `'all'` = all branches
+- `'main,develop,release/*'` = specific branches/patterns
+
+**Files to modify:**
+
+1. `db/schema.ts` - Add `branch_filter` column
+2. `github-subscription-handler.ts` - Parse `--branches` flag
+3. `event-processor.ts` - Filter in specific handlers (`onPush`, `onWorkflowRun`, `onPullRequest`, `onPullRequestReview`, `onBranchEvent`) using typed payloads from `@octokit/webhooks`
+4. `subscription-service.ts` - Store/retrieve filter
+
+**Migration:**
+
+Breaking change: existing subscriptions get default-branch-only behavior.
+Option: migrate existing commits subscriptions to `branch_filter = 'all'` to preserve old behavior.
+
+### Thread-Based Event Grouping
+
+Group related GitHub events into threads to reduce channel noise while preserving context.
+
+**Core Concept:**
+
+When a PR is opened, subsequent events (commits, CI runs, reviews, comments) are sent as thread replies instead of top-level messages. This keeps the channel clean while grouping all PR activity together.
+
+**Event Grouping Strategy:**
+
+| Thread Anchor     | Grouped Events                                                                     |
+| ----------------- | ---------------------------------------------------------------------------------- |
+| PR opened         | Commits pushed, CI status, reviews, review comments, PR comments, PR merged/closed |
+| Issue opened      | Issue comments, issue closed/reopened                                              |
+| Release published | (standalone - no grouping needed)                                                  |
+| Branch created    | Commits pushed to branch (optional)                                                |
+
+**Implementation Approach:**
+
+1. **Unified Message Mappings Table** (implemented as `messageMappings`):
+   - Stores both anchor and child entity mappings
+   - Fields: `spaceId, channelId, repoFullName, githubEntityType, githubEntityId, parentType, parentNumber, townsMessageId, githubUpdatedAt, expiresAt`
+   - Composite primary key on (spaceId, channelId, repoFullName, githubEntityType, githubEntityId)
+
+2. **Event Processing Flow:**
+
+```
+Incoming webhook event
+  ↓
+Is this a PR/issue event?
+  ├─ PR opened / Issue opened → Send as top-level, store in messageMappings
+  └─ PR push / PR review / PR comment / etc.
+       ↓
+     Lookup parent anchor in messageMappings
+       ├─ Found → Send as reply with threadId
+       └─ Not found → Send as top-level (anchor was before bot joined or filtered)
+```
+
+3. **Architecture:**
+   - `EventProcessor` - Routes webhook events, handles entity context
+   - `MessageDeliveryService` - Manages send/edit/delete, thread lookup, mapping storage
+   - `handleAnchorEvent()` - Unified handler for PR/issue open/edit/close/reopen
+
+**Message Format in Thread:**
+
+```text
+# Anchor message (top-level)
+🔀 **PR #123 opened** by @user
+feat: Add dark mode support
+[View PR](https://github.com/...)
+
+# Thread replies
+💬 @reviewer commented on PR #123
+"Looks good! Just one suggestion..."
+
+✅ CI passed on PR #123
+All 45 tests passing
+
+🔍 @reviewer approved PR #123
+"LGTM!"
+
+🎉 PR #123 merged by @user
+```
+
+**Configuration Options:**
+
+```bash
+/github subscribe owner/repo --threads=on   # Enable threading (default)
+/github subscribe owner/repo --threads=off  # All events top-level
+```
+
+Or per-event-type:
+
+```bash
+/github subscribe owner/repo --thread-pr --no-thread-issues
+```
+
+**Edge Cases:**
+
+1. **Late joins**: If bot wasn't present when PR opened, send as top-level
+2. **Thread expiration**: Clean up mappings after 30 days (configurable via `MESSAGE_MAPPING_EXPIRY_DAYS`)
+3. **Cross-channel**: Same PR subscribed in multiple channels = separate threads
+4. **Branch-filtered PR**: PR on non-matching branch → no anchor → child events filtered
+5. **Base branch change**: PR retargeted to matching branch → create anchor retroactively
+
+**Data Retention:**
+
+- Thread mappings expire after 30 days (configurable)
+- Cleanup job runs daily to remove expired entries
+- No impact on message history (Towns retains messages independently)
+
+**Limitations:**
+
+- Requires Towns Protocol thread support (verified working)
+- Thread lookup adds ~1 DB query per event (indexed)
+
+### PR Comment Branch Filtering
+
+GitHub fires `issue_comment` for both issue and PR comments. Unlike `pull_request_review` events, the `issue_comment` payload doesn't include `pull_request.base.ref`.
+
+**Solution: In-memory PR Branch Cache**
+
+- Cache: `Map<string, { branch: string, updatedAt: Date }>` keyed by `${repo}#${prNumber}`
+- Populated by: `onPullRequest`, `onPullRequestReview`, `onPullRequestReviewComment`
+- Read by: `onIssueComment` (cache hit → use cached branch, miss → fetch via API)
+- Timestamp ordering: Only update if incoming `pull_request.updated_at` >= existing
+- Cleanup: Delete entry on PR close; lazy TTL on read (>24h old = treat as miss, refetch)
+
+**API Fallback:**
+
+- On cache miss or stale entry, fetch PR via installation Octokit
+- Rate limit: 5,000 req/hour per installation (rarely hit since PR events populate cache)
+
+### PR Anchor Dynamic Updates
+
+Update the anchor message when PR metadata changes, keeping the thread anchor current without creating new top-level messages.
+
+**Fields That Trigger Anchor Refresh:**
+
+| Field        | Source Event                       | Example Change                      |
+| ------------ | ---------------------------------- | ----------------------------------- |
+| Title        | `pull_request.edited`              | "feat: Add X" → "feat: Add X and Y" |
+| State        | `pull_request.closed/reopened`     | open → closed/merged                |
+| Labels       | `pull_request.labeled/unlabeled`   | Added `bug`, removed `wip`          |
+| Assignees    | `pull_request.assigned/unassigned` | @alice assigned                     |
+| Review State | `pull_request_review.submitted`    | → approved / changes_requested      |
+| CI Status    | `check_suite.completed` (optional) | ✅ passing / ❌ failing             |
+
+**Implementation:**
+
+1. **Store anchor message ID** in `messageMappings` with `isAnchor: true` context
+2. **Detect metadata changes** via `handleAnchorEvent()`:
+   - `pull_request` events: `edited`, `closed`, `reopened`
+   - Thread replies created for `closed`/`reopened`, anchor updated in place
+3. **Update message** via `bot.editMessage(channelId, townsMessageId, newMessage)`
+4. **Timestamp ordering**: Use `githubUpdatedAt` to prevent stale overwrites
+
+**Base Branch Change (Retarget) Handling:**
+
+When a PR's base branch changes from non-matching to matching:
+
+1. On `pull_request.edited`, check if anchor exists via `MessageDeliveryService.anchorExists()`
+2. If no anchor AND branch now matches filter → create anchor retroactively (treat as late `opened`)
+3. If anchor exists → normal edit flow (update anchor)
+4. Pre-existing orphaned messages (sent before anchor) remain top-level; future events thread to new anchor
+
+**Anchor Card Format:**
+
+```text
+🔀 **PR #123** open → merged
+feat: Add dark mode support
+
+👤 @user  📊 +340 -120
+🏷️ enhancement, ui
+👥 @reviewer1, @reviewer2
+✅ 2 approvals  ⏳ CI passing
+
+🔗 https://github.com/...
+```
+
+**Interaction with Thread Replies:**
+
+- Thread replies continue to be added as new messages
+- Only the anchor (first message) is updated
+- Thread context preserved
+
+**Webhook Ordering:**
+
+- GitHub webhooks may arrive out of order
+- Use `pull_request.updated_at` to compare with stored `githubUpdatedAt`
+- Only process edit if incoming timestamp >= stored timestamp
+- Branch cache uses same ordering to prevent stale branch overwrites
+
+**Idempotency:**
+
+- `X-GitHub-Delivery` header tracked in `webhookDeliveries` table
+- Same event delivered twice is skipped
+- Anchor regeneration deterministic based on PR state in payload
+
 ## Configuration
 
 > **See `CONTRIBUTING.md` for complete environment variables reference.**
@@ -407,8 +638,10 @@ Located at `github-app-manifest.json`. Key settings:
 
 **Event Organization (Priority 1):**
 
-- [x] Thread-based grouping for related events (PR + commits + CI) - Basic implementation complete
-- [ ] **PR Anchor Dynamic Updates** - Update anchor message when PR metadata changes (title, state, labels, assignees, review state, CI status)
+- [x] Thread-based grouping for related events (PR + commits + CI)
+- [x] PR Anchor Dynamic Updates - Update anchor on title/state changes
+- [ ] **PR Comment Branch Filtering** - Apply branch filter to `issue_comment` events on PRs
+- [ ] **Retroactive Anchor Creation** - Create anchor when PR base branch changes to match filter
 - [ ] Event summaries / digests to reduce channel noise
 
 **Mentions & Filters (Priority 2):**
@@ -557,181 +790,6 @@ A fun statistics command for repository insights and contributor leaderboards.
 📈 Activity: 156 commits this week (↑12% vs last week)
 ```
 
-### Thread-Based Event Grouping Brainstorm
-
-Group related GitHub events into threads to reduce channel noise while preserving context.
-
-**Core Concept:**
-
-When a PR is opened, subsequent events (commits, CI runs, reviews, comments) are sent as thread replies instead of top-level messages. This keeps the channel clean while grouping all PR activity together.
-
-**Event Grouping Strategy:**
-
-| Thread Anchor     | Grouped Events                                                                     |
-| ----------------- | ---------------------------------------------------------------------------------- |
-| PR opened         | Commits pushed, CI status, reviews, review comments, PR comments, PR merged/closed |
-| Issue opened      | Issue comments, issue closed/reopened                                              |
-| Release published | (standalone - no grouping needed)                                                  |
-| Branch created    | Commits pushed to branch (optional)                                                |
-
-**Implementation Approach:**
-
-1. **Thread ID Tracking Table:**
-
-```sql
-CREATE TABLE event_threads (
-  id SERIAL PRIMARY KEY,
-  space_id TEXT NOT NULL,
-  channel_id TEXT NOT NULL,
-  repo_full_name TEXT NOT NULL,
-  anchor_type TEXT NOT NULL,        -- 'pr' | 'issue'
-  anchor_number INTEGER NOT NULL,   -- PR/issue number
-  thread_event_id TEXT NOT NULL,    -- Towns eventId of anchor message
-  created_at TIMESTAMPTZ NOT NULL,
-  expires_at TIMESTAMPTZ NOT NULL,  -- Auto-cleanup after 30 days
-  UNIQUE(space_id, channel_id, repo_full_name, anchor_type, anchor_number)
-);
-```
-
-2. **Event Processing Flow:**
-
-```
-Incoming webhook event
-  ↓
-Is this a PR/issue event?
-  ├─ PR opened / Issue opened → Send as top-level, store thread_event_id
-  └─ PR push / PR review / PR comment / etc.
-       ↓
-     Lookup thread_event_id for this PR number
-       ├─ Found → Send as reply with threadId
-       └─ Not found → Send as top-level (anchor was before bot joined)
-```
-
-3. **Handler Changes:**
-
-- Modify `EventProcessor` to check for existing thread before sending
-- Add `threadId` option to message sending
-- Store thread anchor on PR/issue open events
-
-**Message Format in Thread:**
-
-```text
-# Anchor message (top-level)
-🔀 **PR #123 opened** by @user
-feat: Add dark mode support
-[View PR](https://github.com/...)
-
-# Thread replies
-💬 @reviewer commented on PR #123
-"Looks good! Just one suggestion..."
-
-✅ CI passed on PR #123
-All 45 tests passing
-
-🔍 @reviewer approved PR #123
-"LGTM!"
-
-🎉 PR #123 merged by @user
-```
-
-**Configuration Options:**
-
-```bash
-/github subscribe owner/repo --threads=on   # Enable threading (default)
-/github subscribe owner/repo --threads=off  # All events top-level
-```
-
-Or per-event-type:
-
-```bash
-/github subscribe owner/repo --thread-pr --no-thread-issues
-```
-
-**Edge Cases:**
-
-1. **Late joins**: If bot wasn't present when PR opened, send as top-level
-2. **Thread expiration**: Clean up thread mappings after 30 days
-3. **High-volume repos**: Consider thread limits (Towns may have constraints)
-4. **Cross-channel**: Same PR subscribed in multiple channels = separate threads
-
-**Data Retention:**
-
-- Thread mappings expire after 30 days (configurable)
-- Cleanup job runs daily to remove expired entries
-- No impact on message history (Towns retains messages independently)
-
-**Limitations:**
-
-- Requires Towns Protocol thread support (verify API availability)
-- Cannot retroactively thread old events
-- Thread lookup adds ~1 DB query per event (index on composite key)
-
-### PR Anchor Dynamic Updates (Priority 1)
-
-Update the anchor message when PR metadata changes, keeping the thread anchor current without creating new top-level messages.
-
-**Fields That Trigger Anchor Refresh:**
-
-| Field        | Source Event                       | Example Change                      |
-| ------------ | ---------------------------------- | ----------------------------------- |
-| Title        | `pull_request.edited`              | "feat: Add X" → "feat: Add X and Y" |
-| State        | `pull_request.closed/reopened`     | open → closed/merged                |
-| Labels       | `pull_request.labeled/unlabeled`   | Added `bug`, removed `wip`          |
-| Assignees    | `pull_request.assigned/unassigned` | @alice assigned                     |
-| Review State | `pull_request_review.submitted`    | → approved / changes_requested      |
-| CI Status    | `check_suite.completed` (optional) | ✅ passing / ❌ failing             |
-
-**Implementation:**
-
-1. **Store anchor message ID** in `event_threads.thread_event_id` (already exists)
-2. **Detect metadata changes** in:
-   - `pull_request` events: `edited`, `labeled`, `unlabeled`, `assigned`, `unassigned`, `closed`, `reopened`
-   - `pull_request_review` events: `submitted` (to update review state summary)
-   - `check_suite` events: `completed` (optional, for CI status)
-3. **Regenerate anchor card** with updated metadata
-4. **Update message** via `bot.editMessage(channelId, threadEventId, newMessage)`
-5. **Do NOT create new thread** - update in place
-
-**Anchor Card Format:**
-
-```text
-🔀 **PR #123** open → merged
-feat: Add dark mode support
-
-👤 @user  📊 +340 -120
-🏷️ enhancement, ui
-👥 @reviewer1, @reviewer2
-✅ 2 approvals  ⏳ CI passing
-
-🔗 https://github.com/...
-```
-
-**Interaction with Thread Replies:**
-
-- Thread replies continue to be added as new messages
-- Only the anchor (first message) is updated
-- Thread context preserved
-
-**Webhook Ordering:**
-
-- GitHub webhooks may arrive out of order
-- Use `updated_at` timestamp from payload to avoid overwriting newer state with older event
-- Store `last_updated_at` in `event_threads` table
-
-**Idempotency:**
-
-- Same event delivered twice should produce same anchor content
-- Use `X-GitHub-Delivery` header to skip duplicate deliveries
-- Anchor regeneration is deterministic based on current PR state
-
-**Database Changes (comments only - not implemented yet):**
-
-```sql
--- Add to event_threads table
--- last_updated_at TIMESTAMPTZ  -- Track last anchor update timestamp
--- anchor_content_hash TEXT     -- Optional: detect actual content changes
-```
-
 ### GitHub Mentions → Towns Mentions Mapping (Priority 2)
 
 Convert GitHub @mentions to Towns @mentions when the GitHub user is linked to a Towns account.
@@ -821,56 +879,6 @@ Filter PR/Issue subscriptions by labels to reduce noise.
 
 - `/github status` should show label filters
 - Warning if no events match filter in last 7 days
-
-### Branch-Specific Event Filtering Brainstorm
-
-Filter events by branch to reduce noise from feature branches.
-
-**Syntax:**
-
-```bash
-/github subscribe owner/repo --events commits --branches main,develop
-/github subscribe owner/repo --events commits,ci --branches release/*
-/github subscribe owner/repo --events commits --branches all  # Opt-in to all branches (or *)
-```
-
-**Scope - Events affected by `--branches` flag:**
-
-| Event    | Branch Context             | Example Use Case         |
-| -------- | -------------------------- | ------------------------ |
-| commits  | Branch pushed to           | Only main/develop pushes |
-| ci       | Workflow trigger branch    | Only prod CI results     |
-| pr       | Base branch (merge target) | Only PRs targeting main  |
-| reviews  | PR's base branch           | Same as pr               |
-| branches | Branch created/deleted     | Only release/\* events   |
-
-**Not branch-specific:** issues, comments, releases, stars, forks
-
-**Design Decisions:**
-
-- Default: **Default branch only** (breaking change from current "all branches")
-- Patterns: **Glob support** (`release/*`, `feature/*`)
-- `--branches all` opts into all branches (preserves old behavior)
-
-**Storage:**
-
-New `branch_filter` column in `github_subscriptions`:
-
-- `NULL` = default branch only
-- `'all'` = all branches
-- `'main,develop,release/*'` = specific branches/patterns
-
-**Files to modify:**
-
-1. `db/schema.ts` - Add `branch_filter` column
-2. `github-subscription-handler.ts` - Parse `--branches` flag
-3. `event-processor.ts` - Filter in specific handlers (`onPush`, `onWorkflowRun`, `onPullRequest`, `onPullRequestReview`, `onBranchEvent`) using typed payloads from `@octokit/webhooks`
-4. `subscription-service.ts` - Store/retrieve filter
-
-**Migration:**
-
-Breaking change: existing subscriptions get default-branch-only behavior.
-Option: migrate existing commits subscriptions to `branch_filter = 'all'` to preserve old behavior.
 
 ## References
 
