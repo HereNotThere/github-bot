@@ -102,3 +102,11 @@ export const OAUTH_STATE_CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
  * After this period, mappings are cleaned up and threads can no longer be grouped.
  */
 export const MESSAGE_MAPPING_EXPIRY_DAYS = 30;
+
+/**
+ * Thread lookup retry settings for race condition handling.
+ * When a comment arrives before anchor mapping is committed, retry with exponential backoff.
+ * Schedule: 250ms → 500ms → 1000ms (total max: 1.75s)
+ */
+export const THREAD_LOOKUP_INITIAL_DELAY_MS = 250;
+export const THREAD_LOOKUP_MAX_RETRIES = 3;

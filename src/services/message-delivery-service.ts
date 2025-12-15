@@ -1,6 +1,10 @@
 import { and, eq, gt, lt } from "drizzle-orm";
 
-import { MESSAGE_MAPPING_EXPIRY_DAYS } from "../constants";
+import {
+  MESSAGE_MAPPING_EXPIRY_DAYS,
+  THREAD_LOOKUP_INITIAL_DELAY_MS,
+  THREAD_LOOKUP_MAX_RETRIES,
+} from "../constants";
 import { db } from "../db";
 import { messageMappings } from "../db/schema";
 import type { TownsBot } from "../types/bot";
@@ -63,20 +67,40 @@ export class MessageDeliveryService {
     } = params;
 
     try {
-      // Thread lookup: non-anchors reply to their parent anchor
-      const threadId =
+      // Thread lookup with retry: handles race condition where comment arrives
+      // before anchor mapping is committed (exponential backoff: 0 → 250 → 500 → 1000ms)
+      let threadId: string | undefined;
+      if (
         entityContext &&
         !entityContext.isAnchor &&
         entityContext.parentType &&
         entityContext.parentNumber != null
-          ? ((await this.getMessageId(
+      ) {
+        for (let attempt = 0; attempt <= THREAD_LOOKUP_MAX_RETRIES; attempt++) {
+          const delay =
+            attempt > 0
+              ? THREAD_LOOKUP_INITIAL_DELAY_MS * 2 ** (attempt - 1)
+              : 0;
+          if (delay) await new Promise(r => setTimeout(r, delay));
+          threadId =
+            (await this.getMessageId(
               spaceId,
               channelId,
               repoFullName,
               entityContext.parentType,
               String(entityContext.parentNumber)
-            )) ?? undefined)
-          : undefined;
+            )) ?? undefined;
+          if (threadId) {
+            if (delay)
+              console.log(`Thread lookup succeeded after ${delay}ms retry`);
+            break;
+          }
+        }
+        if (!threadId)
+          console.log(
+            `Thread lookup failed after ${THREAD_LOOKUP_MAX_RETRIES} retries for ${entityContext.parentType}:${entityContext.parentNumber}`
+          );
+      }
 
       // Skip synthetic thread replies (closed/reopened) when anchor doesn't exist
       // These have githubEntityType === parentType (e.g., "pr" for PR close event)
