@@ -101,9 +101,18 @@ export class EventProcessor {
     );
 
     // Filter by event preferences
-    let interestedChannels = channels.filter(ch =>
-      ch.eventTypes.includes(eventType)
-    );
+    let interestedChannels = channels.filter(ch => {
+      if (ch.eventTypes.includes(eventType)) return true;
+      // PR conversation comments also notify review_comments subscribers
+      if (
+        eventType === "comments" &&
+        entityContext?.parentType === "pr" &&
+        ch.eventTypes.includes("review_comments")
+      ) {
+        return true;
+      }
+      return false;
+    });
 
     // Apply branch filtering for branch-specific events
     if (branch) {

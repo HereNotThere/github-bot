@@ -1,6 +1,14 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 
-import { matchesBranchFilter } from "../../../src/github-app/event-processor";
+import type { EventType } from "../../../src/constants";
+import type { GitHubApp } from "../../../src/github-app/app";
+import {
+  EventProcessor,
+  matchesBranchFilter,
+} from "../../../src/github-app/event-processor";
+import type { MessageDeliveryService } from "../../../src/services/message-delivery-service";
+import type { SubscriptionService } from "../../../src/services/subscription-service";
+import type { IssueCommentPayload } from "../../../src/types/webhooks";
 
 describe("matchesBranchFilter", () => {
   const defaultBranch = "main";
@@ -131,5 +139,116 @@ describe("matchesBranchFilter", () => {
         false
       );
     });
+  });
+});
+
+describe("PR comment routing", () => {
+  // Helper to create minimal IssueCommentPayload for testing
+  const createIssueCommentPayload = (
+    isPrComment: boolean
+  ): IssueCommentPayload =>
+    ({
+      action: "created",
+      repository: {
+        full_name: "owner/repo",
+        default_branch: "main",
+      },
+      issue: {
+        number: 123,
+        // GitHub includes pull_request field only for PR comments
+        ...(isPrComment ? { pull_request: { url: "https://..." } } : {}),
+      },
+      comment: {
+        id: 456,
+        updated_at: new Date().toISOString(),
+      },
+    }) as unknown as IssueCommentPayload;
+
+  // Helper to create mock services
+  const createMocks = (channels: Array<{ eventTypes: EventType[] }>) => {
+    const deliveredChannels: string[] = [];
+
+    const mockSubscriptionService = {
+      getRepoSubscribers: mock(() =>
+        Promise.resolve(
+          channels.map((ch, i) => ({
+            channelId: `channel-${i}`,
+            spaceId: `space-${i}`,
+            eventTypes: ch.eventTypes,
+            branchFilter: "all" as const,
+          }))
+        )
+      ),
+    } as unknown as SubscriptionService;
+
+    const mockMessageDeliveryService = {
+      deliver: mock(({ channelId }: { channelId: string }) => {
+        deliveredChannels.push(channelId);
+        return Promise.resolve();
+      }),
+    } as unknown as MessageDeliveryService;
+
+    const mockGitHubApp = {} as GitHubApp;
+
+    const processor = new EventProcessor(
+      mockGitHubApp,
+      mockSubscriptionService,
+      mockMessageDeliveryService
+    );
+
+    return { processor, deliveredChannels };
+  };
+
+  test("channel subscribed to 'comments' receives PR conversation comment", async () => {
+    const { processor, deliveredChannels } = createMocks([
+      { eventTypes: ["comments"] },
+    ]);
+
+    await processor.onIssueComment(createIssueCommentPayload(true));
+
+    expect(deliveredChannels).toContain("channel-0");
+  });
+
+  test("channel subscribed to 'review_comments' receives PR conversation comment", async () => {
+    const { processor, deliveredChannels } = createMocks([
+      { eventTypes: ["review_comments"] },
+    ]);
+
+    await processor.onIssueComment(createIssueCommentPayload(true));
+
+    expect(deliveredChannels).toContain("channel-0");
+  });
+
+  test("channel subscribed to 'review_comments' does NOT receive issue comment", async () => {
+    const { processor, deliveredChannels } = createMocks([
+      { eventTypes: ["review_comments"] },
+    ]);
+
+    await processor.onIssueComment(createIssueCommentPayload(false));
+
+    expect(deliveredChannels).not.toContain("channel-0");
+  });
+
+  test("both subscribers receive PR conversation comment", async () => {
+    const { processor, deliveredChannels } = createMocks([
+      { eventTypes: ["comments"] },
+      { eventTypes: ["review_comments"] },
+    ]);
+
+    await processor.onIssueComment(createIssueCommentPayload(true));
+
+    expect(deliveredChannels).toContain("channel-0");
+    expect(deliveredChannels).toContain("channel-1");
+    expect(deliveredChannels.length).toBe(2);
+  });
+
+  test("channel without comment subscriptions does not receive comment", async () => {
+    const { processor, deliveredChannels } = createMocks([
+      { eventTypes: ["pr", "issues"] },
+    ]);
+
+    await processor.onIssueComment(createIssueCommentPayload(true));
+
+    expect(deliveredChannels.length).toBe(0);
   });
 });
