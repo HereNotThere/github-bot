@@ -68,6 +68,8 @@ First-time subscriptions open an OAuth window; after authorization the callback 
 
 **Event types:** `pr`, `issues`, `commits`, `releases`, `ci`, `comments`, `reviews`, `branches`, `review_comments`, `forks`, `stars`, `all`
 
+> **Comment routing:** `comments` includes both issue comments and PR conversation comments. `review_comments` covers inline code review comments AND also receives PR conversation comments (useful for PR-focused subscriptions without issue noise).
+
 **Branch filter:** `--branches main,develop` or `--branches release/*` or `--branches all` (default: default branch only)
 
 > Branch filtering applies to: `pr`, `commits`, `ci`, `reviews`, `review_comments`, `branches`. Other events (`issues`, `releases`, `comments`, `forks`, `stars`) are not branch-specific.
@@ -109,9 +111,9 @@ First-time subscriptions open an OAuth window; after authorization the callback 
 - `push` - Commits to branches
 - `release` - Published
 - `workflow_run` - CI/CD status
-- `issue_comment` - New comments (threaded to PR/issue)
+- `issue_comment` - Comments on issues and PR conversations (threaded; routes to `comments`, also `review_comments` for PRs)
 - `pull_request_review` - PR reviews (threaded to PR)
-- `pull_request_review_comment` - Review comments (threaded to PR)
+- `pull_request_review_comment` - Inline code review comments (threaded to PR; routes to `review_comments`)
 - `create` / `delete` - Branch/tag creation and deletion
 - `fork` - Repository forks
 - `watch` - Repository stars
