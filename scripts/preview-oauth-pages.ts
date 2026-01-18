@@ -25,13 +25,13 @@ const mockResults: Record<string, SubscribeResult> = {
     success: true,
     deliveryMode: "webhook",
     repoFullName: "HereNotThere/bot-github",
-    eventTypes: "pr,issues,commits,releases",
+    eventTypes: ["pr", "issues", "commits", "releases"],
   },
   "polling-success": {
     success: true,
     deliveryMode: "polling",
     repoFullName: "HereNotThere/bot-github",
-    eventTypes: "pr,issues,commits",
+    eventTypes: ["pr", "issues", "commits"],
     installUrl:
       "https://github.com/apps/towns-github-bot-test/installations/new/permissions?target_id=98539902",
   },
@@ -41,7 +41,7 @@ const mockResults: Record<string, SubscribeResult> = {
     installUrl:
       "https://github.com/apps/towns-github-bot-test/installations/new/permissions?target_id=98539902",
     repoFullName: "HereNotThere/bot-github",
-    eventTypes: "pr,issues,commits",
+    eventTypes: ["pr", "issues", "commits"],
     error: "Private repository requires GitHub App installation",
   },
   "subscription-error": {

@@ -67,8 +67,8 @@ export enum TokenStatus {
  */
 export class GitHubOAuthService {
   private githubApp: GitHubApp;
-  private redirectUrl: string;
-  private encryptionKey: Buffer;
+  private readonly redirectUrl: string;
+  private readonly encryptionKey: Buffer;
   /** In-flight refresh promises to prevent concurrent refresh race conditions */
   private refreshPromises = new Map<string, Promise<string | null>>();
 
@@ -150,21 +150,15 @@ export class GitHubOAuthService {
     code: string,
     state: string
   ): Promise<OAuthCallbackResult> {
-    // Validate state and get stored data
-    const [stateData] = await db
-      .select()
-      .from(oauthStates)
-      .where(eq(oauthStates.state, state))
-      .limit(1);
+    // Atomically consume state to prevent race conditions and replay attacks
+    const stateData = await this.consumeOAuthState(state);
 
     if (!stateData) {
       throw new Error("Invalid or expired state parameter");
     }
 
-    // Check expiration
+    // Check expiration (state already deleted, just need to reject)
     if (new Date() > stateData.expiresAt) {
-      // Clean up expired state
-      await this.deleteOAuthState(state);
       throw new Error("OAuth state expired");
     }
 
@@ -221,9 +215,6 @@ export class GitHubOAuthService {
         target: githubUserTokens.townsUserId,
         set: tokenFields,
       });
-
-    // Clean up used state
-    await this.deleteOAuthState(state);
 
     // Validate redirect data from database
     const actionResult = RedirectActionSchema.safeParse(
@@ -390,12 +381,18 @@ export class GitHubOAuthService {
   }
 
   /**
-   * Delete OAuth state record
+   * Atomically consume OAuth state record (delete and return)
+   * Prevents race conditions where two requests could both succeed
    *
    * @param state - OAuth state token
+   * @returns The deleted state record, or undefined if not found
    */
-  private async deleteOAuthState(state: string): Promise<void> {
-    await db.delete(oauthStates).where(eq(oauthStates.state, state));
+  private async consumeOAuthState(state: string) {
+    const [deleted] = await db
+      .delete(oauthStates)
+      .where(eq(oauthStates.state, state))
+      .returning();
+    return deleted;
   }
 
   /**
@@ -534,7 +531,7 @@ export class GitHubOAuthService {
    *
    * @returns Number of expired states deleted
    */
-  async cleanupExpiredStates(): Promise<number> {
+  private async cleanupExpiredStates(): Promise<number> {
     const now = new Date();
 
     try {

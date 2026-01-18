@@ -248,7 +248,7 @@ The bot supports two delivery modes:
 ### Event Organization
 
 - [x] Thread-based event grouping - Group related events (PR + commits + CI) in threads
-- [ ] **Dynamic PR anchor updates** - Update anchor message when PR metadata changes (title, state, labels, assignees, reviews, CI)
+- [x] **Dynamic PR anchor updates** - Update anchor message when PR metadata changes (title, state, labels, assignees, reviews, CI)
 - [ ] **Mentions support** - Convert GitHub @mentions to Towns @mentions when users are linked
 - [ ] **Label filters** - Filter subscriptions by PR/issue labels (`--labels bug,security`)
 - [ ] Event summaries - Digest multiple events into single update message
