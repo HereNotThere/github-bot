@@ -65,30 +65,53 @@ export async function handleTopLanguages(
 
     // Parse query parameters for card options
     const theme = c.req.query("theme");
-    const layout = c.req.query("layout") as
-      | "normal"
-      | "compact"
-      | "donut"
-      | "donut-vertical"
-      | "pie"
-      | undefined;
-    const langsCount = c.req.query("langs_count");
     const hide = c.req.query("hide");
     const hideTitle = c.req.query("hide_title") === "true";
     const hideBorder = c.req.query("hide_border") === "true";
-    const cardWidth = c.req.query("card_width");
     const customTitle = c.req.query("custom_title");
+
+    // Validate layout against allowed values
+    const allowedLayouts = [
+      "normal",
+      "compact",
+      "donut",
+      "donut-vertical",
+      "pie",
+    ] as const;
+    const rawLayout = c.req.query("layout");
+    const layout = allowedLayouts.includes(
+      rawLayout as (typeof allowedLayouts)[number]
+    )
+      ? (rawLayout as (typeof allowedLayouts)[number])
+      : undefined;
+
+    // Parse and validate numeric params
+    const rawLangsCount = c.req.query("langs_count");
+    const parsedLangsCount = rawLangsCount
+      ? parseInt(rawLangsCount, 10)
+      : undefined;
+    const langsCount = Number.isFinite(parsedLangsCount)
+      ? parsedLangsCount
+      : undefined;
+
+    const rawCardWidth = c.req.query("card_width");
+    const parsedCardWidth = rawCardWidth
+      ? parseInt(rawCardWidth, 10)
+      : undefined;
+    const cardWidth = Number.isFinite(parsedCardWidth)
+      ? parsedCardWidth
+      : undefined;
 
     // Render SVG using github-readme-stats
     // eslint-disable-next-line @typescript-eslint/no-unsafe-call
     const svg = renderTopLanguages(topLangs, {
       theme,
       layout,
-      langs_count: langsCount ? parseInt(langsCount, 10) : undefined,
+      langs_count: langsCount,
       hide: hide ? hide.split(",") : undefined,
       hide_title: hideTitle,
       hide_border: hideBorder,
-      card_width: cardWidth ? parseInt(cardWidth, 10) : undefined,
+      card_width: cardWidth,
       custom_title: customTitle,
     }) as string;
 

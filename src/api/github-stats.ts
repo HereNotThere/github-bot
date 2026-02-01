@@ -9,28 +9,36 @@ export type TopLangData = Record<
 /** Default color for languages without a defined color */
 const DEFAULT_LANG_COLOR = "#858585";
 
+/** Repository node from GraphQL response */
+interface RepoNode {
+  name: string;
+  languages: {
+    edges: Array<{
+      size: number;
+      node: {
+        color: string | null;
+        name: string;
+      };
+    }>;
+  };
+}
+
 /** GraphQL response shape for language query */
 interface LanguageGraphQLResponse {
   user: {
     repositories: {
-      nodes: Array<{
-        name: string;
-        languages: {
-          edges: Array<{
-            size: number;
-            node: {
-              color: string | null;
-              name: string;
-            };
-          }>;
-        };
-      }>;
+      pageInfo: {
+        hasNextPage: boolean;
+        endCursor: string | null;
+      };
+      nodes: RepoNode[];
     };
   };
 }
 
 /**
  * Fetch top languages for a GitHub user via GraphQL
+ * Uses cursor-based pagination to fetch all repositories
  *
  * @param octokit - Authenticated Octokit instance
  * @param username - GitHub username
@@ -41,9 +49,13 @@ export async function fetchTopLanguages(
   username: string
 ): Promise<TopLangData> {
   const query = `
-    query userInfo($login: String!) {
+    query userInfo($login: String!, $after: String) {
       user(login: $login) {
-        repositories(ownerAffiliations: OWNER, isFork: false, first: 100) {
+        repositories(ownerAffiliations: OWNER, isFork: false, first: 100, after: $after) {
+          pageInfo {
+            hasNextPage
+            endCursor
+          }
           nodes {
             name
             languages(first: 10, orderBy: {field: SIZE, direction: DESC}) {
@@ -61,14 +73,27 @@ export async function fetchTopLanguages(
     }
   `;
 
-  const response = await octokit.graphql<LanguageGraphQLResponse>(query, {
-    login: username,
-  });
+  // Fetch all pages of repositories
+  const allRepos: RepoNode[] = [];
+  let hasNextPage = true;
+  let cursor: string | null = null;
+
+  while (hasNextPage) {
+    const response: LanguageGraphQLResponse = await octokit.graphql(query, {
+      login: username,
+      after: cursor,
+    });
+
+    const { nodes, pageInfo } = response.user.repositories;
+    allRepos.push(...nodes);
+    hasNextPage = pageInfo.hasNextPage;
+    cursor = pageInfo.endCursor;
+  }
 
   // Process repositories into language totals
   const langTotals: TopLangData = {};
 
-  for (const repo of response.user.repositories.nodes) {
+  for (const repo of allRepos) {
     for (const edge of repo.languages.edges) {
       const name = edge.node.name;
       if (langTotals[name]) {
