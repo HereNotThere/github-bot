@@ -28,7 +28,20 @@ Thank you for your interest in contributing! This guide covers development setup
    bun db:migrate   # Run migrations
    ```
 
-3. **Configure environment** (see Configuration section below)
+3. **Configure environment**
+
+   ```bash
+   cp .env.sample .env
+   ```
+
+   For local Postgres (via `bun db:up` or native install):
+
+   ```dotenv
+   DATABASE_URL=postgresql://postgres:postgres@localhost:5432/github-bot
+   DATABASE_SSL=false
+   ```
+
+   See Configuration section below for all options.
 
 4. **Run development server**
 
