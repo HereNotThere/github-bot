@@ -2,23 +2,44 @@ import { z } from "zod";
 
 import { ALLOWED_EVENT_TYPES } from "../constants";
 
-/** Supported redirect actions after OAuth completion */
-export const RedirectActionSchema = z.enum([
-  "subscribe",
-  "subscribe-update",
-  "unsubscribe-update",
-  "query",
-]);
-export type RedirectAction = z.infer<typeof RedirectActionSchema>;
-
 /** Event type schema for validation */
 export const EventTypeSchema = z.enum(ALLOWED_EVENT_TYPES);
 
-/** Redirect data passed through OAuth state */
-export const RedirectDataSchema = z.object({
-  repo: z.string(),
-  eventTypes: z.array(EventTypeSchema).optional(),
-  branchFilter: z.string().nullable().optional(),
-  messageEventId: z.string().optional(),
-});
-export type RedirectData = z.infer<typeof RedirectDataSchema>;
+/**
+ * OAuth redirect state - discriminated union by action type
+ *
+ * Each action has only the fields it requires, enabling proper type narrowing.
+ */
+export const OAuthRedirectSchema = z.discriminatedUnion("action", [
+  // Subscribe to a new repo
+  z.object({
+    action: z.literal("subscribe"),
+    repo: z.string(),
+    eventTypes: z.array(EventTypeSchema),
+    branchFilter: z.string().nullable(),
+    messageEventId: z.string().optional(),
+  }),
+
+  // Update existing subscription (add/change events)
+  z.object({
+    action: z.literal("subscribe-update"),
+    repo: z.string(),
+    eventTypes: z.array(EventTypeSchema),
+    branchFilter: z.string().nullable(),
+  }),
+
+  // Remove event types from subscription
+  z.object({
+    action: z.literal("unsubscribe-update"),
+    repo: z.string(),
+    eventTypes: z.array(EventTypeSchema),
+  }),
+
+  // Query command (gh_pr, gh_issue)
+  z.object({
+    action: z.literal("query"),
+    repo: z.string(),
+  }),
+]);
+
+export type OAuthRedirect = z.infer<typeof OAuthRedirectSchema>;

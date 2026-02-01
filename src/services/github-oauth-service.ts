@@ -15,12 +15,7 @@ import {
 import { db } from "../db";
 import { githubUserTokens, oauthStates } from "../db/schema";
 import { GitHubApp } from "../github-app/app";
-import {
-  RedirectActionSchema,
-  RedirectDataSchema,
-  type RedirectAction,
-  type RedirectData,
-} from "../types/oauth";
+import { OAuthRedirectSchema, type OAuthRedirect } from "../types/oauth";
 
 /**
  * Result returned from handleCallback after OAuth completion
@@ -29,8 +24,7 @@ export interface OAuthCallbackResult {
   townsUserId: string;
   channelId: string;
   spaceId: string | undefined; // Undefined for DM channels
-  redirectAction: RedirectAction | null;
-  redirectData: RedirectData | null;
+  redirect: OAuthRedirect | null;
   githubLogin: string;
 }
 
@@ -103,16 +97,14 @@ export class GitHubOAuthService {
    * @param townsUserId - Towns user ID
    * @param channelId - Current channel ID
    * @param spaceId - Current space ID (undefined for DM channels)
-   * @param redirectAction - Action to perform after OAuth (e.g., 'subscribe')
-   * @param redirectData - Additional data for redirect (e.g., repo name)
+   * @param redirect - Redirect action and data after OAuth completion
    * @returns Authorization URL to send to user
    */
   async getAuthorizationUrl(
     townsUserId: string,
     channelId: string,
     spaceId: string | undefined,
-    redirectAction?: RedirectAction,
-    redirectData?: RedirectData
+    redirect?: OAuthRedirect
   ): Promise<string> {
     // Generate secure state token
     const state = randomBytes(32).toString("hex");
@@ -123,9 +115,8 @@ export class GitHubOAuthService {
       state,
       townsUserId,
       channelId,
-      spaceId: spaceId ?? null, // Convert undefined to null for DB
-      redirectAction: redirectAction || null,
-      redirectData: redirectData ? JSON.stringify(redirectData) : null,
+      spaceId: spaceId ?? null,
+      redirect: redirect ? JSON.stringify(redirect) : null,
       expiresAt,
       createdAt: new Date(),
     });
@@ -216,21 +207,27 @@ export class GitHubOAuthService {
         set: tokenFields,
       });
 
-    // Validate redirect data from database
-    const actionResult = RedirectActionSchema.safeParse(
-      stateData.redirectAction
-    );
-    const dataResult = stateData.redirectData
-      ? RedirectDataSchema.safeParse(JSON.parse(stateData.redirectData))
-      : null;
+    // Parse redirect data from database
+    let redirect: OAuthRedirect | null = null;
+    if (stateData.redirect) {
+      try {
+        const parsed = OAuthRedirectSchema.safeParse(
+          JSON.parse(stateData.redirect)
+        );
+        if (parsed.success) {
+          redirect = parsed.data;
+        }
+      } catch (error) {
+        console.error("[OAuth] Failed to parse redirect data:", error);
+      }
+    }
 
     // Return state data for redirect handling
     return {
       townsUserId: stateData.townsUserId,
       channelId: stateData.channelId,
-      spaceId: stateData.spaceId ?? undefined, // Convert null to undefined
-      redirectAction: actionResult.success ? actionResult.data : null,
-      redirectData: dataResult?.success ? dataResult.data : null,
+      spaceId: stateData.spaceId ?? undefined,
+      redirect,
       githubLogin: user.login,
     };
   }

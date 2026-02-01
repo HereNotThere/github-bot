@@ -286,11 +286,11 @@ async function handleUpdateSubscription(
   }
 
   const mode = existingSubscription.deliveryMode === "webhook" ? "⚡" : "⏱️";
-  const branchInfo = formatBranchFilter(updateResult.branchFilter ?? null);
+  const branchInfo = formatBranchFilter(updateResult.branchFilter);
   await handler.sendMessage(
     channelId,
     `✅ **Updated subscription to ${repo}**\n\n` +
-      `${mode} Events: **${formatEventTypes(updateResult.eventTypes ?? [])}**\n` +
+      `${mode} Events: **${formatEventTypes(updateResult.eventTypes)}**\n` +
       `🌿 Branches: **${branchInfo}**`
   );
 }
@@ -475,7 +475,7 @@ async function handleRemoveEventTypes(
       channelId,
       header +
         `Removed: **${removedLabel}**\n` +
-        `Remaining: **${formatEventTypes(removeResult.eventTypes!)}**`
+        `Remaining: **${formatEventTypes(removeResult.eventTypes)}**`
     );
   }
 }

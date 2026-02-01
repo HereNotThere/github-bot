@@ -38,6 +38,17 @@ import { GitHubOAuthService } from "./github-oauth-service";
  */
 export type BranchFilter = string | null;
 
+/** Result of updateSubscription - discriminated union */
+export type UpdateSubscriptionResult =
+  | { success: true; eventTypes: EventType[]; branchFilter: BranchFilter }
+  | { success: false; error: string };
+
+/** Result of removeEventTypes - discriminated union */
+export type RemoveEventTypesResult =
+  | { success: true; deleted: true }
+  | { success: true; deleted: false; eventTypes: EventType[] }
+  | { success: false; error: string };
+
 /**
  * Subscription request parameters
  */
@@ -293,12 +304,7 @@ export class SubscriptionService {
     repoFullName: string,
     newEventTypes: EventType[],
     branchFilter?: BranchFilter
-  ): Promise<{
-    success: boolean;
-    eventTypes?: EventType[];
-    branchFilter?: BranchFilter;
-    error?: string;
-  }> {
+  ): Promise<UpdateSubscriptionResult> {
     const validation = await this.validateRepoAccessAndGetSubscription(
       townsUserId,
       channelId,
@@ -359,12 +365,7 @@ export class SubscriptionService {
     channelId: string,
     repoFullName: string,
     typesToRemove: EventType[]
-  ): Promise<{
-    success: boolean;
-    deleted?: boolean;
-    eventTypes?: EventType[];
-    error?: string;
-  }> {
+  ): Promise<RemoveEventTypesResult> {
     const validation = await this.validateRepoAccessAndGetSubscription(
       townsUserId,
       channelId,

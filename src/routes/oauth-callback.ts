@@ -1,7 +1,6 @@
 import type { Context } from "hono";
 
 import { getOwnerIdFromUsername, parseRepo } from "../api/github-client";
-import { DEFAULT_EVENT_TYPES_ARRAY, type EventType } from "../constants";
 import { formatBranchFilter } from "../formatters/subscription-messages";
 import {
   generateInstallUrl,
@@ -35,21 +34,22 @@ export async function handleOAuthCallback(
 
   try {
     // Handle OAuth callback
-    const {
-      githubLogin,
-      channelId,
-      spaceId,
-      townsUserId,
-      redirectAction,
-      redirectData,
-    } = await oauthService.handleCallback(code, state);
+    const { githubLogin, channelId, spaceId, townsUserId, redirect } =
+      await oauthService.handleCallback(code, state);
+
+    // All OAuth flows should have a redirect action
+    if (!redirect) {
+      throw new Error("OAuth state missing redirect action");
+    }
+
+    const { action } = redirect;
 
     const message = `✅ GitHub account @${githubLogin} connected successfully!`;
     // Check if we should edit an existing message or send a new one
-    if (redirectData?.messageEventId) {
+    if (action === "subscribe" && redirect.messageEventId) {
       // Edit the OAuth prompt message to show success
       try {
-        await bot.editMessage(channelId, redirectData.messageEventId, message);
+        await bot.editMessage(channelId, redirect.messageEventId, message);
       } catch (error) {
         // If edit fails (message deleted, etc.), fall back to sending new message
         console.error("Failed to edit OAuth message:", error);
@@ -60,137 +60,120 @@ export async function handleOAuthCallback(
       await bot.sendMessage(channelId, message);
     }
 
-    // If there was a redirect action (e.g., subscribe), complete the subscription
-    if (redirectAction === "subscribe" && redirectData) {
-      if (redirectData.repo && townsUserId) {
-        const eventTypes: EventType[] = redirectData.eventTypes ?? [
-          ...DEFAULT_EVENT_TYPES_ARRAY,
-        ];
+    // Handle redirect action
+    if (action === "subscribe") {
+      const subResult = await subscriptionService.createSubscription({
+        townsUserId,
+        spaceId, // May be null for DMs
+        channelId,
+        repoIdentifier: redirect.repo,
+        eventTypes: redirect.eventTypes,
+        branchFilter: redirect.branchFilter,
+      });
 
-        // Attempt subscription now that OAuth is complete
-        const branchFilter = redirectData.branchFilter ?? null;
-        const subResult = await subscriptionService.createSubscription({
-          townsUserId,
-          spaceId, // May be null for DMs
+      if (subResult.success) {
+        await subscriptionService.sendSubscriptionSuccess(
+          subResult,
+          redirect.eventTypes,
+          redirect.branchFilter,
           channelId,
-          repoIdentifier: redirectData.repo,
-          eventTypes,
-          branchFilter,
+          bot
+        );
+
+        // Return success page with subscription data
+        return renderSuccess(c, {
+          action: "subscribe",
+          subscriptionResult: subResult,
         });
+      } else if (!subResult.success && subResult.requiresInstallation) {
+        // Private repo - show installation page (no Towns message)
+        return renderSuccess(c, {
+          action: "subscribe",
+          subscriptionResult: subResult,
+        });
+      } else {
+        // Other error - notify in Towns
+        await bot.sendMessage(channelId, `❌ ${subResult.error}`);
 
-        if (subResult.success) {
-          await subscriptionService.sendSubscriptionSuccess(
-            subResult,
-            eventTypes,
-            branchFilter,
-            channelId,
-            bot
-          );
-
-          // Return success page with subscription data
-          return renderSuccess(c, {
-            action: "subscribe",
-            subscriptionResult: subResult,
-          });
-        } else if (!subResult.success && subResult.requiresInstallation) {
-          // Private repo - show installation page (no Towns message)
-          return renderSuccess(c, {
-            action: "subscribe",
-            subscriptionResult: subResult,
-          });
-        } else {
-          // Other error - notify in Towns
-          await bot.sendMessage(channelId, `❌ ${subResult.error}`);
-
-          return renderSuccess(c, {
-            action: "subscribe",
-            subscriptionResult: subResult,
-          });
-        }
+        return renderSuccess(c, {
+          action: "subscribe",
+          subscriptionResult: subResult,
+        });
       }
     }
 
     // Handle subscription update (add event types to existing subscription)
-    if (redirectAction === "subscribe-update" && redirectData) {
-      if (redirectData.repo && townsUserId) {
-        const eventTypes: EventType[] = redirectData.eventTypes ?? [
-          ...DEFAULT_EVENT_TYPES_ARRAY,
-        ];
+    if (action === "subscribe-update") {
+      const updateResult = await subscriptionService.updateSubscription(
+        townsUserId,
+        channelId,
+        redirect.repo,
+        redirect.eventTypes,
+        redirect.branchFilter
+      );
 
-        const updateResult = await subscriptionService.updateSubscription(
-          townsUserId,
+      if (updateResult.success) {
+        const branchInfo = formatBranchFilter(updateResult.branchFilter);
+        await bot.sendMessage(
           channelId,
-          redirectData.repo,
-          eventTypes,
-          redirectData.branchFilter ?? null
+          `✅ **Updated subscription to ${redirect.repo}**\n\n` +
+            `Events: **${updateResult.eventTypes.join(", ")}**\n` +
+            `Branches: **${branchInfo}**`
         );
-
-        if (updateResult.success) {
-          const branchInfo = formatBranchFilter(
-            updateResult.branchFilter ?? null
-          );
-          await bot.sendMessage(
-            channelId,
-            `✅ **Updated subscription to ${redirectData.repo}**\n\n` +
-              `Events: **${(updateResult.eventTypes ?? []).join(", ")}**\n` +
-              `Branches: **${branchInfo}**`
-          );
-        } else {
-          await bot.sendMessage(channelId, `❌ ${updateResult.error}`);
-        }
-
-        // Show basic success page (user should return to Towns)
-        return renderSuccess(c);
+      } else {
+        await bot.sendMessage(channelId, `❌ ${updateResult.error}`);
       }
+
+      // Show basic success page (user should return to Towns)
+      return renderSuccess(c);
     }
 
     // Handle unsubscribe update (remove event types from existing subscription)
-    if (redirectAction === "unsubscribe-update" && redirectData) {
-      if (redirectData.repo && townsUserId && redirectData.eventTypes) {
-        const removeResult = await subscriptionService.removeEventTypes(
-          townsUserId,
-          channelId,
-          redirectData.repo,
-          redirectData.eventTypes
-        );
+    if (action === "unsubscribe-update") {
+      const removeResult = await subscriptionService.removeEventTypes(
+        townsUserId,
+        channelId,
+        redirect.repo,
+        redirect.eventTypes
+      );
 
-        if (removeResult.success) {
-          if (removeResult.deleted) {
-            await bot.sendMessage(
-              channelId,
-              `✅ **Unsubscribed from ${redirectData.repo}**`
-            );
-          } else {
-            await bot.sendMessage(
-              channelId,
-              `✅ **Updated subscription to ${redirectData.repo}**\n\n` +
-                `Remaining event types: **${removeResult.eventTypes!.join(", ")}**`
-            );
-          }
+      if (removeResult.success) {
+        if (removeResult.deleted) {
+          await bot.sendMessage(
+            channelId,
+            `✅ **Unsubscribed from ${redirect.repo}**`
+          );
         } else {
-          await bot.sendMessage(channelId, `❌ ${removeResult.error}`);
+          await bot.sendMessage(
+            channelId,
+            `✅ **Updated subscription to ${redirect.repo}**\n\n` +
+              `Remaining event types: **${removeResult.eventTypes.join(", ")}**`
+          );
         }
-
-        return renderSuccess(c);
+      } else {
+        await bot.sendMessage(channelId, `❌ ${removeResult.error}`);
       }
+
+      return renderSuccess(c);
     }
 
     // Handle query command redirect (gh_pr, gh_issue)
     // Check if app installation is needed for the repo
-    if (redirectAction === "query" && redirectData?.repo) {
-      const repo = redirectData.repo;
-      const installationId = await installationService.isRepoInstalled(repo);
+    if (action === "query") {
+      const installationId = await installationService.isRepoInstalled(
+        redirect.repo
+      );
 
       if (!installationId) {
         // App not installed - show installation required page with auto-redirect
-        const [owner] = parseRepo(repo);
+        const [owner] = parseRepo(redirect.repo);
         const ownerId = await getOwnerIdFromUsername(owner);
         const installUrl = generateInstallUrl(ownerId);
 
         return renderSuccess(c, {
           action: "query",
           requiresInstallation: true,
-          repoFullName: repo,
+          repoFullName: redirect.repo,
           installUrl,
         });
       }

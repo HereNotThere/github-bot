@@ -71,6 +71,13 @@
       "when": 1768446708725,
       "tag": "0009_nice_eddie_brock",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1769921114841,
+      "tag": "0010_wild_madrox",
+      "breakpoints": true
     }
   ]
 }
