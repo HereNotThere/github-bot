@@ -1,12 +1,12 @@
 import type { BotHandler } from "@towns-protocol/bot";
 
-import { EventType } from "../constants";
+import type { EventType } from "../constants";
 import {
   GitHubOAuthService,
   TokenStatus,
 } from "../services/github-oauth-service";
 import type { BranchFilter } from "../services/subscription-service";
-import type { RedirectAction, RedirectData } from "../types/oauth";
+import type { OAuthRedirect } from "../types/oauth";
 
 /**
  * Send OAuth prompt for query commands (gh_pr, gh_issue)
@@ -33,28 +33,18 @@ export async function sendQueryOAuthPrompt(
       "This repository requires authentication.\n\n" +
       "[Connect GitHub Account]({authUrl})\n\n" +
       "Run the command again after connecting.",
-    "query",
-    { repo }
+    { action: "query", repo }
   );
 }
 
 /**
  * Send editable OAuth prompt using two-phase pattern:
  * 1. Sends initial "Checking..." message and captures eventId
- * 2. Generates OAuth URL with eventId in redirectData
+ * 2. Generates OAuth URL with eventId in redirect
  * 3. Edits message to show OAuth prompt with URL placeholder replaced
  *
- * @param oauthService - OAuth service for generating auth URL
- * @param handler - Bot handler for sending messages
- * @param userId - Towns user ID
- * @param channelId - Channel to send message to
- * @param spaceId - Space ID
- * @param message - Message to display, with `{authUrl}` as placeholder
- * @param redirectAction - Action to perform after OAuth completion
- * @param redirectData - Data for redirect action (must include repo)
+ * @param redirect - Redirect action and data (messageEventId will be added automatically)
  * @returns eventId of the sent message, or null if validation/sending failed.
- *          Callers should handle null gracefully - it means no message was
- *          successfully sent/edited and the user was not prompted.
  */
 export async function sendEditableOAuthPrompt(
   oauthService: GitHubOAuthService,
@@ -63,8 +53,7 @@ export async function sendEditableOAuthPrompt(
   channelId: string,
   spaceId: string | undefined,
   message: string,
-  redirectAction: RedirectAction,
-  redirectData: Omit<RedirectData, "messageEventId">
+  redirect: Exclude<OAuthRedirect, { action: "stats" }>
 ): Promise<string | null> {
   // Validate placeholder exists
   if (!message.includes("{authUrl}")) {
@@ -81,16 +70,16 @@ export async function sendEditableOAuthPrompt(
       "🔄 Checking GitHub authentication..."
     );
 
-    // Phase 2: Generate OAuth URL with eventId included in redirectData
+    // Phase 2: Generate OAuth URL with eventId included
+    const redirectWithEventId =
+      redirect.action === "subscribe"
+        ? { ...redirect, messageEventId: eventId }
+        : redirect;
     const authUrl = await oauthService.getAuthorizationUrl(
       userId,
       channelId,
       spaceId,
-      redirectAction,
-      {
-        ...redirectData,
-        messageEventId: eventId,
-      }
+      redirectWithEventId
     );
 
     // Phase 3: Edit message with OAuth URL replacing placeholder
@@ -120,13 +109,34 @@ export async function handleInvalidOAuthToken(
   userId: string,
   channelId: string,
   spaceId: string | undefined,
-  redirectAction: RedirectAction,
+  redirectAction: "subscribe" | "subscribe-update" | "unsubscribe-update",
   redirectData: {
     repo: string;
     eventTypes: EventType[];
     branchFilter?: BranchFilter;
   }
 ): Promise<void> {
+  // Build redirect object from action and data
+  const redirect: Exclude<OAuthRedirect, { action: "stats" | "query" }> =
+    redirectAction === "subscribe"
+      ? {
+          action: "subscribe",
+          repo: redirectData.repo,
+          eventTypes: redirectData.eventTypes,
+          branchFilter: redirectData.branchFilter ?? null,
+        }
+      : redirectAction === "subscribe-update"
+        ? {
+            action: "subscribe-update",
+            repo: redirectData.repo,
+            eventTypes: redirectData.eventTypes,
+            branchFilter: redirectData.branchFilter ?? null,
+          }
+        : {
+            action: "unsubscribe-update",
+            repo: redirectData.repo,
+            eventTypes: redirectData.eventTypes,
+          };
   switch (tokenStatus) {
     case TokenStatus.NotLinked:
       await sendEditableOAuthPrompt(
@@ -138,8 +148,7 @@ export async function handleInvalidOAuthToken(
         `🔐 **GitHub Account Required**\n\n` +
           `To modify subscriptions, you need to connect your GitHub account.\n\n` +
           `[Connect GitHub Account]({authUrl})`,
-        redirectAction,
-        redirectData
+        redirect
       );
       return;
 
@@ -153,8 +162,7 @@ export async function handleInvalidOAuthToken(
         `⚠️ **GitHub Token Expired**\n\n` +
           `Your GitHub token has expired or been revoked. Please reconnect your account.\n\n` +
           `[Reconnect GitHub Account]({authUrl})`,
-        redirectAction,
-        redirectData
+        redirect
       );
       return;
 
@@ -163,8 +171,7 @@ export async function handleInvalidOAuthToken(
         userId,
         channelId,
         spaceId,
-        redirectAction,
-        redirectData
+        redirect
       );
       await handler.sendMessage(
         channelId,

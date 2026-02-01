@@ -51,8 +51,7 @@ export const oauthStates = pgTable(
     townsUserId: text("towns_user_id").notNull(),
     channelId: text("channel_id").notNull(),
     spaceId: text("space_id"), // Nullable for DM channels
-    redirectAction: text("redirect_action"), // 'subscribe' etc
-    redirectData: text("redirect_data"), // JSON string with additional context
+    redirect: text("redirect"), // JSON: OAuthRedirect discriminated union
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
   },
