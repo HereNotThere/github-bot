@@ -29,21 +29,36 @@ interface LanguageGraphQLResponse {
   };
 }
 
+/** Options for fetching top languages */
+export interface FetchTopLanguagesOptions {
+  /** Include private repositories (default: false, public only) */
+  includePrivate?: boolean;
+}
+
 /**
  * Fetch top languages for a GitHub user via GraphQL
  *
  * @param octokit - Authenticated Octokit instance
  * @param username - GitHub username
+ * @param options - Fetch options
  * @returns Language statistics keyed by language name
  */
 export async function fetchTopLanguages(
   octokit: Octokit,
-  username: string
+  username: string,
+  options: FetchTopLanguagesOptions = {}
 ): Promise<TopLangData> {
+  const { includePrivate = false } = options;
+
+  // Build repository arguments - always exclude forks, optionally filter by privacy
+  const repoArgs = includePrivate
+    ? "ownerAffiliations: OWNER, isFork: false, first: 100"
+    : "ownerAffiliations: OWNER, isFork: false, first: 100, privacy: PUBLIC";
+
   const query = `
     query userInfo($login: String!) {
       user(login: $login) {
-        repositories(ownerAffiliations: OWNER, isFork: false, first: 100) {
+        repositories(${repoArgs}) {
           nodes {
             name
             languages(first: 10, orderBy: {field: SIZE, direction: DESC}) {

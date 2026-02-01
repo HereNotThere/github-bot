@@ -24,9 +24,11 @@ export async function handleStatsOAuthStart(
   c: Context,
   oauthService: GitHubOAuthService
 ) {
-  // For stats-only OAuth, we use placeholder values since there's no Towns context
+  // For stats-only OAuth, we use placeholder values since there's no Towns context.
+  // No race condition: each OAuth flow is isolated by its unique `state` token (the primary key).
+  // The placeholder townsUserId is replaced with `stats:${githubUserId}` in handleCallback.
   const authUrl = await oauthService.getAuthorizationUrl(
-    "stats-user", // Placeholder - will be replaced with GitHub user ID after OAuth
+    "stats-user", // Placeholder - replaced with stats:${githubUserId} after OAuth
     "stats", // Placeholder channel
     undefined, // No space
     { action: "stats" }
@@ -59,7 +61,10 @@ export async function handleTopLanguages(
   try {
     // Fetch language data via GraphQL
     const octokit = new Octokit({ auth: token });
-    const topLangs = await fetchTopLanguages(octokit, username);
+    const includePrivate = c.req.query("include_private") === "true";
+    const topLangs = await fetchTopLanguages(octokit, username, {
+      includePrivate,
+    });
 
     // Parse query parameters for card options
     const theme = c.req.query("theme");
