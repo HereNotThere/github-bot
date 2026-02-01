@@ -104,7 +104,7 @@ export class GitHubOAuthService {
     townsUserId: string,
     channelId: string,
     spaceId: string | undefined,
-    redirect?: OAuthRedirect
+    redirect: OAuthRedirect
   ): Promise<string> {
     // Generate secure state token
     const state = randomBytes(32).toString("hex");
@@ -116,7 +116,7 @@ export class GitHubOAuthService {
       townsUserId,
       channelId,
       spaceId: spaceId ?? null,
-      redirect: redirect ? JSON.stringify(redirect) : null,
+      redirect: JSON.stringify(redirect),
       expiresAt,
       createdAt: new Date(),
     });
