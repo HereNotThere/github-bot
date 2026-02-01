@@ -37,11 +37,6 @@ export async function handleOAuthCallback(
     const { githubLogin, channelId, spaceId, townsUserId, redirect } =
       await oauthService.handleCallback(code, state);
 
-    // All OAuth flows should have a redirect action
-    if (!redirect) {
-      throw new Error("OAuth state missing redirect action");
-    }
-
     const { action } = redirect;
 
     const message = `✅ GitHub account @${githubLogin} connected successfully!`;

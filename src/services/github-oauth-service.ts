@@ -24,7 +24,7 @@ export interface OAuthCallbackResult {
   townsUserId: string;
   channelId: string;
   spaceId: string | undefined; // Undefined for DM channels
-  redirect: OAuthRedirect | null;
+  redirect: OAuthRedirect;
   githubLogin: string;
 }
 
@@ -207,19 +207,21 @@ export class GitHubOAuthService {
         set: tokenFields,
       });
 
-    // Parse redirect data from database
-    let redirect: OAuthRedirect | null = null;
-    if (stateData.redirect) {
-      try {
-        const parsed = OAuthRedirectSchema.safeParse(
-          JSON.parse(stateData.redirect)
-        );
-        if (parsed.success) {
-          redirect = parsed.data;
-        }
-      } catch (error) {
-        console.error("[OAuth] Failed to parse redirect data:", error);
-      }
+    // Parse redirect data from database (all OAuth flows must have a redirect action)
+    if (!stateData.redirect) {
+      throw new Error("OAuth state missing redirect data");
+    }
+
+    let redirectJson: unknown;
+    try {
+      redirectJson = JSON.parse(stateData.redirect);
+    } catch {
+      throw new Error("OAuth state has malformed redirect JSON");
+    }
+
+    const parsed = OAuthRedirectSchema.safeParse(redirectJson);
+    if (!parsed.success) {
+      throw new Error(`Invalid OAuth redirect data: ${parsed.error.message}`);
     }
 
     // Return state data for redirect handling
@@ -227,7 +229,7 @@ export class GitHubOAuthService {
       townsUserId: stateData.townsUserId,
       channelId: stateData.channelId,
       spaceId: stateData.spaceId ?? undefined,
-      redirect,
+      redirect: parsed.data,
       githubLogin: user.login,
     };
   }
