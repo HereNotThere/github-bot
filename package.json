@@ -17,7 +17,7 @@
     "lint": "eslint --format unix ./src  --max-warnings=0",
     "lint:fix": "eslint --format unix ./src  --max-warnings=0 --fix",
     "start": "bun run src/index.ts",
-    "test": "bun test",
+    "test": "bun test tests/",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -27,6 +27,7 @@
     "@towns-protocol/bot": "^1.0.3",
     "@towns-protocol/proto": "^1.0.3",
     "drizzle-orm": "^0.45.1",
+    "github-readme-stats": "github:anuraghazra/github-readme-stats",
     "hono": "^4.11.7",
     "picomatch": "^4.0.3",
     "postgres": "^3.4.8",

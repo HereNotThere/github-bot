@@ -2,6 +2,7 @@ import type { Context } from "hono";
 
 import type { SubscribeResult } from "../services/subscription-service";
 import { escapeHtml } from "../utils/html-escape";
+import { renderStatsSuccess } from "./stats-pages";
 
 // Towns logo served as static asset
 const TOWNS_LOGO = "/assets/Towns-rainbow.png";
@@ -20,16 +21,53 @@ interface SubscribeActionData {
   subscriptionResult: SubscribeResult;
 }
 
+/** Stats action data for non-Towns users */
+interface StatsActionData {
+  action: "stats";
+  githubLogin: string;
+}
+
 /** Render success data - union of different action types */
 type RenderSuccessData =
   | SubscribeActionData
   | QueryInstallData
+  | StatsActionData
   | { action?: undefined };
+
+/**
+ * Render error page with HTML-escaped message
+ */
+export function renderError(c: Context, message: string, status: 400 | 500) {
+  const safeMessage = escapeHtml(message);
+
+  return c.html(
+    `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>OAuth Error</title>
+      </head>
+      <body>
+        <h1>OAuth Error</h1>
+        <p>${safeMessage}</p>
+      </body>
+    </html>
+    `,
+    status
+  );
+}
 
 /**
  * Render success page after OAuth completion - Main dispatcher
  */
 export function renderSuccess(c: Context, data?: RenderSuccessData) {
+  // Handle stats action (non-Towns users)
+  if (data?.action === "stats") {
+    return renderStatsSuccess(c, data.githubLogin);
+  }
+
   // Handle query action with install required
   if (data?.action === "query") {
     return renderQueryInstallRequired(c, data);
@@ -410,29 +448,4 @@ function renderStyles() {
       }
     </style>
   `;
-}
-
-/**
- * Render error page with HTML-escaped message
- */
-export function renderError(c: Context, message: string, status: 400 | 500) {
-  const safeMessage = escapeHtml(message);
-
-  return c.html(
-    `
-    <!DOCTYPE html>
-    <html>
-      <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>OAuth Error</title>
-      </head>
-      <body>
-        <h1>OAuth Error</h1>
-        <p>${safeMessage}</p>
-      </body>
-    </html>
-    `,
-    status
-  );
 }

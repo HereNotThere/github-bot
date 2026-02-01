@@ -40,6 +40,11 @@ export const OAuthRedirectSchema = z.discriminatedUnion("action", [
     action: z.literal("query"),
     repo: z.string(),
   }),
+
+  // Stats card OAuth (non-Towns users, no messaging)
+  z.object({
+    action: z.literal("stats"),
+  }),
 ]);
 
 export type OAuthRedirect = z.infer<typeof OAuthRedirectSchema>;

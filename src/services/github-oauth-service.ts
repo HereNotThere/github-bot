@@ -285,6 +285,34 @@ export class GitHubOAuthService {
   }
 
   /**
+   * Get decrypted access token by GitHub login (username)
+   *
+   * @param githubLogin - GitHub username
+   * @returns Decrypted access token or null if not found
+   */
+  async getTokenByGithubLogin(githubLogin: string): Promise<string | null> {
+    const [token] = await db
+      .select()
+      .from(githubUserTokens)
+      .where(eq(githubUserTokens.githubLogin, githubLogin))
+      .limit(1);
+
+    if (!token) {
+      return null;
+    }
+
+    // Check if token is expired and refresh if needed
+    if (this.isTokenExpired(token.expiresAt)) {
+      console.log(
+        `[OAuth] Access token expired for GitHub user ${githubLogin}, attempting refresh`
+      );
+      return this.refreshAccessToken(token.townsUserId);
+    }
+
+    return this.decryptToken(token.accessToken);
+  }
+
+  /**
    * Get user-scoped Octokit instance for API calls, automatically refreshing token if expired
    *
    * @param townsUserId - Towns user ID

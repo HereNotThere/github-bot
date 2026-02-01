@@ -14,6 +14,11 @@ import { handleGhPr } from "./handlers/gh-pr-handler";
 import { handleGithubSubscription } from "./handlers/github-subscription-handler";
 import { handleGitHubWebhook } from "./routes/github-webhook";
 import { handleOAuthCallback } from "./routes/oauth-callback";
+import {
+  handleStatsConnect,
+  handleStatsOAuthStart,
+  handleTopLanguages,
+} from "./routes/stats";
 import { GitHubOAuthService } from "./services/github-oauth-service";
 import { MessageDeliveryService } from "./services/message-delivery-service";
 import { PollingService } from "./services/polling-service";
@@ -204,6 +209,11 @@ app.get("/oauth/callback", c =>
 app.post("/github-webhook", c =>
   handleGitHubWebhook(c, githubApp, webhookProcessor)
 );
+
+// Stats routes (GitHub language cards)
+app.get("/stats/connect", handleStatsConnect);
+app.get("/stats/connect/start", c => handleStatsOAuthStart(c, oauthService));
+app.get("/stats/top-langs", c => handleTopLanguages(c, oauthService));
 
 // Health check endpoint
 app.get("/health", async c => {
