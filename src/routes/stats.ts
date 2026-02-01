@@ -61,10 +61,7 @@ export async function handleTopLanguages(
   try {
     // Fetch language data via GraphQL
     const octokit = new Octokit({ auth: token });
-    const includePrivate = c.req.query("include_private") === "true";
-    const topLangs = await fetchTopLanguages(octokit, username, {
-      includePrivate,
-    });
+    const topLangs = await fetchTopLanguages(octokit, username);
 
     // Parse query parameters for card options
     const theme = c.req.query("theme");
