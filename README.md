@@ -25,6 +25,10 @@ Receive instant webhook notifications for:
 
 Query and subscribe to repositories using slash commands. See [Usage](#usage) section for detailed examples.
 
+### 📊 GitHub Stats Card
+
+Generate dynamic language stats cards for your profile README. See [GitHub Stats Card](#github-stats-card) section for setup.
+
 ## Features
 
 - **GitHub App Integration** - Official GitHub App with OAuth authentication
@@ -122,109 +126,28 @@ First-time subscriptions open an OAuth window; after authorization the callback 
 
 All webhook events above except `workflow_run` (CI/CD) are also available via polling for repositories without the GitHub App installed. CI events require the GitHub App for real-time webhooks.
 
-## Setup
+## GitHub Stats Card
 
-### 1. Prerequisites
+Generate a dynamic language stats card for your GitHub profile README.
 
-- Bun installed (`curl -fsSL https://bun.sh/install | bash`)
-- PostgreSQL database (local Docker or hosted on Render/Neon)
-- Towns bot created via Developer Portal (app.towns.com/developer)
-- GitHub App created (required for private repos + real-time webhooks, optional for public-only polling)
-
-### 2. Local Development Setup
-
-1. **Clone and install dependencies**
-
-   ```bash
-   git clone <your-repo>
-   cd github-bot
-   bun install
+1. **[Connect your GitHub account](https://github-bot-omega.onrender.com/stats/connect)**
+2. **Add to your README:**
+   ```markdown
+   ![Top Languages](https://github-bot-omega.onrender.com/stats/top-langs?username=YOUR_USERNAME)
    ```
 
-2. **Configure environment variables**
+| Parameter         | Values                                                                                                                      | Description                 |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------- | --------------------------- |
+| `theme`           | `default`, `dark`, `radical`, `merko`, `gruvbox`, `tokyonight`, `onedark`, `cobalt`, `synthwave`, `highcontrast`, `dracula` | Color theme                 |
+| `layout`          | `normal`, `compact`, `donut`, `donut-vertical`, `pie`                                                                       | Card layout                 |
+| `langs_count`     | `1-20`                                                                                                                      | Number of languages         |
+| `hide`            | `javascript,html`                                                                                                           | Languages to hide           |
+| `hide_title`      | `true`                                                                                                                      | Hide the title              |
+| `hide_border`     | `true`                                                                                                                      | Hide the border             |
 
-   ```bash
-   cp .env.sample .env
-   ```
+## Contributing
 
-   Edit `.env` with your values:
-
-   ```dotenv
-   # Required
-   APP_PRIVATE_DATA=<from Towns Developer Portal>
-   JWT_SECRET=<from Towns Developer Portal>
-   DATABASE_URL=postgresql://user:pass@host:5432/github-bot
-   PUBLIC_URL=https://your-bot.onrender.com
-   ```
-
-   > **Note:** See `CONTRIBUTING.md` for all configuration options including GitHub App setup, database options, and development settings.
-
-3. **Start Postgres locally for development**
-
-   Start the database with:
-
-   ```bash
-   bun db:up
-   ```
-
-   This creates a container with a named volume so your data persists across restarts.
-
-   To stop the database:
-
-   ```bash
-   bun db:down
-   ```
-
-   Then point your `.env` at the container:
-
-   ```dotenv
-   DATABASE_URL=postgresql://postgres:postgres@localhost:5432/github-bot
-   DATABASE_SSL=false
-   ```
-
-4. **Database migrations** (automatic on startup)
-
-   Migrations run automatically when the bot starts. The database schema is created on first run.
-
-   Manual migration commands (if needed):
-
-   ```bash
-   bun run db:generate   # Generate new migrations from schema changes
-   bun run db:migrate    # Run pending migrations
-   bun run db:push       # Push schema directly (dev only)
-   ```
-
-5. **Run the bot locally**
-
-   ```bash
-   bun run dev
-   ```
-
-6. **Expose webhook with ngrok** (for testing)
-
-   ```bash
-   ngrok http 5123
-   ```
-
-7. **Update webhook URL in Developer Portal**
-   - Set to: `https://your-ngrok-url.ngrok-free.app/webhook`
-
-## GitHub App Setup
-
-The bot supports two delivery modes:
-
-- **Polling mode** - Checks every 5 minutes (default, no setup required)
-- **Webhook mode** - Instant notifications (requires GitHub App installation)
-
-> **For GitHub App setup:** See `CONTRIBUTING.md` for detailed instructions on creating and configuring a GitHub App.
-
-## Production Deployment
-
-1. **Push to GitHub**
-2. **Deploy to Render/Railway/Fly.io**
-3. **Set environment variables** in hosting platform
-4. **Update webhook URL** in Developer Portal
-5. **Test with `/help` command**
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, configuration options, GitHub App creation, and deployment instructions.
 
 ## Current Limitations
 
