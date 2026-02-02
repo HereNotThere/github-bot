@@ -1,6 +1,6 @@
 import { Octokit } from "@octokit/rest";
 // @ts-expect-error - untyped JS module
-import { renderTopLanguages } from "github-readme-stats/src/cards/top-languages.js";
+import { renderTopLanguages } from "github-readme-stats";
 import type { Context } from "hono";
 
 import { fetchTopLanguages } from "../api/github-stats";
