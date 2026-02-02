@@ -190,7 +190,7 @@ export async function fetchStreakStats(
     {
       login: username,
       start: yearStartUTC(currentYear),
-      end: yearEndUTC(currentYear),
+      end: now.toISOString(), // Use current time, not year-end, to avoid future dates
     }
   );
 
@@ -201,7 +201,12 @@ export async function fetchStreakStats(
   // Fetch contributions for all years
   const allContributions: ContributionDay[] = [];
 
-  for (const year of contributionYears.sort((a, b) => a - b)) {
+  // Ensure current year is always included (for inferring "today" from contribution calendar)
+  const yearsToFetch = contributionYears.includes(currentYear)
+    ? contributionYears
+    : [...contributionYears, currentYear];
+
+  for (const year of yearsToFetch.sort((a, b) => a - b)) {
     // Reuse initialResponse for current year to avoid redundant API call
     let response: ContributionsGraphQLResponse;
     if (year === currentYear) {
@@ -230,17 +235,9 @@ export async function fetchStreakStats(
     (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
   );
 
-  // Calculate streaks
-  // Infer "today" from contribution data (last entry is user's current day in their GitHub timezone)
-  // This avoids timezone mismatches between server UTC and user's local time
-  const userToday = allContributions[allContributions.length - 1]?.date;
-  const userYesterday = userToday
-    ? formatDate(
-        new Date(new Date(userToday + "T12:00:00Z").getTime() - 86400000)
-      )
-    : formatDate(now);
-  const today = userToday ?? formatDate(now);
-  const yesterday = userYesterday;
+  // Calculate streaks using UTC dates
+  const today = formatDate(now);
+  const yesterday = formatDate(new Date(now.getTime() - 86400000));
 
   let total = 0;
   let firstContribution: string | null = null;
