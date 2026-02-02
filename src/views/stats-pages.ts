@@ -30,13 +30,14 @@ export function renderStatsConnect(c: Context, startUrl: string) {
 
 /**
  * Stats OAuth success page (non-Towns users)
- * Shows embed code for the language card
+ * Shows embed code for the language card and streak card
  */
 export function renderStatsSuccess(c: Context, githubLogin: string) {
   const safeLogin = escapeHtml(githubLogin);
   const publicUrl =
     process.env.PUBLIC_URL ?? `http://localhost:${process.env.PORT ?? 5123}`;
-  const embedUrl = `${publicUrl}/stats/top-langs?username=${safeLogin}`;
+  const langsUrl = `${publicUrl}/stats/top-langs?username=${safeLogin}`;
+  const streakUrl = `${publicUrl}/stats/streak?username=${safeLogin}`;
 
   return c.html(`
     <!DOCTYPE html>
@@ -55,19 +56,48 @@ export function renderStatsSuccess(c: Context, githubLogin: string) {
             font-size: 13px;
             overflow-x: auto;
           }
+          .card-section {
+            margin: 32px 0;
+            padding-top: 24px;
+            border-top: 1px solid #e2e8f0;
+          }
+          .card-section:first-of-type {
+            border-top: none;
+            padding-top: 0;
+          }
+          h2 {
+            color: #2d3748;
+            margin-bottom: 16px;
+            font-size: 1.25em;
+          }
         </style>
       </head>
       <body>
-        <div class="container">
+        <div class="container" style="max-width: 600px;">
           <h1>Connected as @${safeLogin}!</h1>
-          <p>Your GitHub stats card is ready. Add it to your profile README:</p>
-          <div style="margin: 24px 0; text-align: center;">
-            <img src="${embedUrl}" alt="Top Languages" style="max-width: 100%; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);" />
+          <p>Your GitHub stats cards are ready. Add them to your profile README:</p>
+
+          <div class="card-section">
+            <h2>🔥 Streak Stats</h2>
+            <div style="margin: 16px 0; text-align: center;">
+              <img src="${streakUrl}" alt="GitHub Streak" style="max-width: 100%; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);" />
+            </div>
+            <p><strong>Markdown:</strong></p>
+            <pre>![GitHub Streak](${streakUrl})</pre>
+            <p style="margin-top: 12px;"><strong>With options:</strong></p>
+            <pre>![GitHub Streak](${streakUrl}&amp;theme=dark)</pre>
           </div>
-          <p><strong>Markdown:</strong></p>
-          <pre>![Top Languages](${embedUrl})</pre>
-          <p style="margin-top: 16px;"><strong>With options:</strong></p>
-          <pre>![Top Languages](${embedUrl}&amp;theme=dark&amp;layout=compact)</pre>
+
+          <div class="card-section">
+            <h2>📊 Top Languages</h2>
+            <div style="margin: 16px 0; text-align: center;">
+              <img src="${langsUrl}" alt="Top Languages" style="max-width: 100%; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);" />
+            </div>
+            <p><strong>Markdown:</strong></p>
+            <pre>![Top Languages](${langsUrl})</pre>
+            <p style="margin-top: 12px;"><strong>With options:</strong></p>
+            <pre>![Top Languages](${langsUrl}&amp;theme=dark&amp;layout=compact)</pre>
+          </div>
         </div>
       </body>
     </html>

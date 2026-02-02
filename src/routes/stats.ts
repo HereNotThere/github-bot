@@ -3,9 +3,10 @@ import { Octokit } from "@octokit/rest";
 import { renderTopLanguages } from "github-readme-stats";
 import type { Context } from "hono";
 
-import { fetchTopLanguages } from "../api/github-stats";
+import { fetchStreakStats, fetchTopLanguages } from "../api/github-stats";
 import type { GitHubOAuthService } from "../services/github-oauth-service";
 import { renderStatsConnect, renderStatsError } from "../views/stats-pages";
+import { renderStreakCard, STREAK_THEMES } from "../views/streak-card";
 
 const PUBLIC_URL =
   process.env.PUBLIC_URL ?? `http://localhost:${process.env.PORT ?? 5123}`;
@@ -121,6 +122,63 @@ export async function handleTopLanguages(
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Failed to fetch languages";
+    return renderStatsError(c, message);
+  }
+}
+
+/**
+ * Render GitHub streak card
+ */
+export async function handleStreak(
+  c: Context,
+  oauthService: GitHubOAuthService
+) {
+  const username = c.req.query("username");
+
+  if (!username) {
+    return renderStatsError(c, "Missing username parameter");
+  }
+
+  // Get token for this GitHub user
+  const token = await oauthService.getTokenByGithubLogin(username);
+
+  if (!token) {
+    // User hasn't connected - redirect to connect page
+    return c.redirect(`${PUBLIC_URL}/stats/connect`);
+  }
+
+  try {
+    // Fetch streak data via GraphQL
+    const octokit = new Octokit({ auth: token });
+    const stats = await fetchStreakStats(octokit, username);
+
+    // Parse query parameters for card options
+    const rawTheme = c.req.query("theme");
+    const theme = rawTheme && rawTheme in STREAK_THEMES ? rawTheme : undefined;
+    const hideBorder = c.req.query("hide_border") === "true";
+
+    // Parse and validate numeric params
+    const rawBorderRadius = c.req.query("border_radius");
+    const parsedBorderRadius = rawBorderRadius
+      ? parseFloat(rawBorderRadius)
+      : undefined;
+    const borderRadius = Number.isFinite(parsedBorderRadius)
+      ? parsedBorderRadius
+      : undefined;
+
+    // Render SVG
+    const svg = renderStreakCard(stats, {
+      theme,
+      hideBorder,
+      borderRadius,
+    });
+
+    c.header("Content-Type", "image/svg+xml");
+    c.header("Cache-Control", "max-age=21600, s-maxage=21600"); // 6 hours
+    return c.body(svg);
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Failed to fetch streak stats";
     return renderStatsError(c, message);
   }
 }

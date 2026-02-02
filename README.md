@@ -25,9 +25,9 @@ Receive instant webhook notifications for:
 
 Query and subscribe to repositories using slash commands. See [Usage](#usage) section for detailed examples.
 
-### 📊 GitHub Stats Card
+### 📊 GitHub Stats Cards
 
-Generate dynamic language stats cards for your profile README. See [GitHub Stats Card](#github-stats-card) section for setup.
+Generate dynamic stats cards for your profile README. See [GitHub Stats Cards](#github-stats-cards) section for setup.
 
 ## Features
 
@@ -126,24 +126,46 @@ First-time subscriptions open an OAuth window; after authorization the callback 
 
 All webhook events above except `workflow_run` (CI/CD) are also available via polling for repositories without the GitHub App installed. CI events require the GitHub App for real-time webhooks.
 
-## GitHub Stats Card
+## GitHub Stats Cards
 
-Generate a dynamic language stats card for your GitHub profile README.
+Generate dynamic stats cards for your GitHub profile README.
 
 1. **[Connect your GitHub account](https://github-bot-omega.onrender.com/stats/connect)**
 2. **Add to your README:**
-   ```markdown
-   ![Top Languages](https://github-bot-omega.onrender.com/stats/top-langs?username=YOUR_USERNAME)
-   ```
 
-| Parameter         | Values                                                                                                                      | Description                 |
-| ----------------- | --------------------------------------------------------------------------------------------------------------------------- | --------------------------- |
-| `theme`           | `default`, `dark`, `radical`, `merko`, `gruvbox`, `tokyonight`, `onedark`, `cobalt`, `synthwave`, `highcontrast`, `dracula` | Color theme                 |
-| `layout`          | `normal`, `compact`, `donut`, `donut-vertical`, `pie`                                                                       | Card layout                 |
-| `langs_count`     | `1-20`                                                                                                                      | Number of languages         |
-| `hide`            | `javascript,html`                                                                                                           | Languages to hide           |
-| `hide_title`      | `true`                                                                                                                      | Hide the title              |
-| `hide_border`     | `true`                                                                                                                      | Hide the border             |
+### Streak Stats
+
+```markdown
+![GitHub Streak](https://github-bot-omega.onrender.com/stats/streak?username=YOUR_USERNAME)
+```
+
+| Parameter       | Values                                                                                                                      | Description     |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------- | --------------- |
+| `theme`         | `default`, `dark`, `radical`, `tokyonight`, `dracula`, `gruvbox`, `onedark`, `nord`, `github_dark`, `catppuccin_mocha`, etc | Color theme     |
+| `hide_border`   | `true`                                                                                                                      | Hide the border |
+| `border_radius` | `0-20`                                                                                                                      | Border radius   |
+
+### Top Languages
+
+```markdown
+![Top Languages](https://github-bot-omega.onrender.com/stats/top-langs?username=YOUR_USERNAME)
+```
+
+| Parameter     | Values                                                                                                                      | Description         |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------- |
+| `theme`       | `default`, `dark`, `radical`, `merko`, `gruvbox`, `tokyonight`, `onedark`, `cobalt`, `synthwave`, `highcontrast`, `dracula` | Color theme         |
+| `layout`      | `normal`, `compact`, `donut`, `donut-vertical`, `pie`                                                                       | Card layout         |
+| `langs_count` | `1-20`                                                                                                                      | Number of languages |
+| `hide`        | `javascript,html`                                                                                                           | Languages to hide   |
+| `hide_title`  | `true`                                                                                                                      | Hide the title      |
+| `hide_border` | `true`                                                                                                                      | Hide the border     |
+
+## Third-Party Licenses
+
+The stats card features use code adapted from the following open source projects:
+
+- **[github-readme-stats](https://github.com/anuraghazra/github-readme-stats)** - MIT License, Copyright (c) 2020 Anurag Hazra
+- **[github-readme-streak-stats](https://github.com/DenverCoder1/github-readme-streak-stats)** - MIT License, Copyright (c) 2020 Jonah Lawrence
 
 ## Contributing
 
@@ -167,6 +189,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, configuration opti
 - [x] Granular unsubscribe - `/github unsubscribe owner/repo --events pr,issues`
 - [x] Subscription management - `/github subscribe owner/repo --events releases` adds to existing
 - [x] Branch-specific filtering - `--branches main,release/*` with glob pattern support
+- [x] GitHub stats cards - `/stats/top-langs` and `/stats/streak` endpoints
 
 ### Event Organization
 
