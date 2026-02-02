@@ -17,6 +17,7 @@ import { handleOAuthCallback } from "./routes/oauth-callback";
 import {
   handleStatsConnect,
   handleStatsOAuthStart,
+  handleStreak,
   handleTopLanguages,
 } from "./routes/stats";
 import { GitHubOAuthService } from "./services/github-oauth-service";
@@ -214,6 +215,7 @@ app.post("/github-webhook", c =>
 app.get("/stats/connect", handleStatsConnect);
 app.get("/stats/connect/start", c => handleStatsOAuthStart(c, oauthService));
 app.get("/stats/top-langs", c => handleTopLanguages(c, oauthService));
+app.get("/stats/streak", c => handleStreak(c, oauthService));
 
 // Health check endpoint
 app.get("/health", async c => {
