@@ -39,6 +39,11 @@ export async function handleOAuthCallback(
 
     const { action } = redirect;
 
+    // Handle stats-only OAuth (non-Towns users) - skip messaging
+    if (action === "stats") {
+      return renderSuccess(c, { action: "stats", githubLogin });
+    }
+
     const message = `✅ GitHub account @${githubLogin} connected successfully!`;
     // Check if we should edit an existing message or send a new one
     if (action === "subscribe" && redirect.messageEventId) {

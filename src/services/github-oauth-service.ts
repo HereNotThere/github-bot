@@ -166,19 +166,58 @@ export class GitHubOAuthService {
     });
     const { data: user } = await userOctokit.request("GET /user");
 
-    // Encrypt access token
+    // Parse redirect data early to determine flow type
+    if (!stateData.redirect) {
+      throw new Error("OAuth state missing redirect data");
+    }
+
+    let redirectJson: unknown;
+    try {
+      redirectJson = JSON.parse(stateData.redirect);
+    } catch {
+      throw new Error("OAuth state has malformed redirect JSON");
+    }
+
+    const parsed = OAuthRedirectSchema.safeParse(redirectJson);
+    if (!parsed.success) {
+      throw new Error(`Invalid OAuth redirect data: ${parsed.error.message}`);
+    }
+    const redirect = parsed.data;
+
+    // For stats OAuth: if a Towns user already linked this GitHub account, reuse their token
+    // (avoids breaking Towns integration; getTokenByGithubLogin finds it by githubLogin)
+    if (redirect.action === "stats") {
+      const [existingToken] = await db
+        .select()
+        .from(githubUserTokens)
+        .where(eq(githubUserTokens.githubUserId, user.id))
+        .limit(1);
+
+      if (existingToken && !existingToken.townsUserId.startsWith("stats:")) {
+        return {
+          townsUserId: existingToken.townsUserId,
+          channelId: stateData.channelId,
+          spaceId: stateData.spaceId ?? undefined,
+          redirect,
+          githubLogin: user.login,
+        };
+      }
+    }
+
+    // For stats-only OAuth, use GitHub user ID as townsUserId to avoid collisions
+    const townsUserId =
+      redirect.action === "stats" ? `stats:${user.id}` : stateData.townsUserId;
+
     const encryptedToken = this.encryptToken(authentication.token);
     const encryptedRefreshToken = authentication.refreshToken
       ? this.encryptToken(authentication.refreshToken)
       : null;
 
-    // Auto-transfer: If this GitHub account is linked to a different Towns user, remove that link first
-    // This allows the same GitHub account to be re-linked to a new Towns user
+    // Auto-transfer: remove existing link to allow re-linking to new Towns user
     await db
       .delete(githubUserTokens)
       .where(eq(githubUserTokens.githubUserId, user.id));
 
-    // Store or update user token
     const now = new Date();
     const tokenFields = {
       githubUserId: user.id,
@@ -197,39 +236,18 @@ export class GitHubOAuthService {
 
     await db
       .insert(githubUserTokens)
-      .values({
-        townsUserId: stateData.townsUserId,
-        createdAt: now,
-        ...tokenFields,
-      })
+      .values({ townsUserId, createdAt: now, ...tokenFields })
       .onConflictDoUpdate({
         target: githubUserTokens.townsUserId,
         set: tokenFields,
       });
 
-    // Parse redirect data from database (all OAuth flows must have a redirect action)
-    if (!stateData.redirect) {
-      throw new Error("OAuth state missing redirect data");
-    }
-
-    let redirectJson: unknown;
-    try {
-      redirectJson = JSON.parse(stateData.redirect);
-    } catch {
-      throw new Error("OAuth state has malformed redirect JSON");
-    }
-
-    const parsed = OAuthRedirectSchema.safeParse(redirectJson);
-    if (!parsed.success) {
-      throw new Error(`Invalid OAuth redirect data: ${parsed.error.message}`);
-    }
-
     // Return state data for redirect handling
     return {
-      townsUserId: stateData.townsUserId,
+      townsUserId,
       channelId: stateData.channelId,
       spaceId: stateData.spaceId ?? undefined,
-      redirect: parsed.data,
+      redirect,
       githubLogin: user.login,
     };
   }
@@ -282,6 +300,34 @@ export class GitHubOAuthService {
     }
 
     return tokenData.accessToken;
+  }
+
+  /**
+   * Get decrypted access token by GitHub login (username)
+   *
+   * @param githubLogin - GitHub username
+   * @returns Decrypted access token or null if not found
+   */
+  async getTokenByGithubLogin(githubLogin: string): Promise<string | null> {
+    const [token] = await db
+      .select()
+      .from(githubUserTokens)
+      .where(eq(githubUserTokens.githubLogin, githubLogin))
+      .limit(1);
+
+    if (!token) {
+      return null;
+    }
+
+    // Check if token is expired and refresh if needed
+    if (this.isTokenExpired(token.expiresAt)) {
+      console.log(
+        `[OAuth] Access token expired for GitHub user ${githubLogin}, attempting refresh`
+      );
+      return this.refreshAccessToken(token.townsUserId);
+    }
+
+    return this.decryptToken(token.accessToken);
   }
 
   /**
